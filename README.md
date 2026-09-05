@@ -4,6 +4,23 @@ OpenCoach is a local-first, cross-platform voice-practice application. It shares
 
 The application was previously developed under the working name **Voice Practice Unified**. Some package names and application identifiers retain that name for compatibility.
 
+## Screenshots
+
+![OpenCoach conversation practice with the Heart coach, text input, voice controls, and shadowing feedback](docs/images/opencoach-conversation.png)
+
+<table>
+  <tr>
+    <td width="68%"><img src="docs/images/opencoach-lessons.png" alt="OpenCoach seven-lesson learning map with progress and unlock states"></td>
+    <td width="32%"><img src="docs/images/opencoach-model-settings.png" alt="OpenCoach responsive model settings with an empty API-key field and a local OpenAI-compatible endpoint"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Structured learning map</strong><br>Seven built-in lessons with local progress and unlock states.</td>
+    <td align="center"><strong>Responsive model settings</strong><br>Choose a local or cloud endpoint; credentials are optional for local services.</td>
+  </tr>
+</table>
+
+> The screenshots show a fresh local installation. `LLM not configured` is the expected state until the user explicitly selects a local endpoint or configures a cloud provider.
+
 ## Project status
 
 OpenCoach is open-source beta software. The source tree is suitable for development and review, but there is currently **no signed public desktop or mobile release**.

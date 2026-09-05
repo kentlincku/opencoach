@@ -146,7 +146,7 @@ test('local web server binds loopback and serves the built app without proxying 
 
   const home = await fetch(`${origin}/`);
   assert.equal(home.status, 200);
-  assert.match(await home.text(), /Voice Practice/);
+  assert.match(await home.text(), /OpenCoach/);
 
   const api = await fetch(`${origin}/v1/models`);
   assert.equal(api.status, 404);
