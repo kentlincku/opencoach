@@ -26,7 +26,7 @@
     "test": "node scripts/run-tests.mjs"
   },
   "devDependencies": {
-    "@huggingface/transformers": "3.3.3",
+    "@huggingface/transformers": "4.2.0",
     "electron": "^44.0.0",
     "electron-builder": "^26.0.12",
     "esbuild": "0.25.9",
