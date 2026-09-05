@@ -24,9 +24,28 @@ jobs:
       - run: npm run build:web
       - name: Run Swift Core and Bridge Unit Tests
         run: |
+          set +e
           cd apps/ios
-          swift test
-          swift run VoicePracticeTests
+          output=$(swift test 2>&1)
+          status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            escaped=${output//'%'/'%25'}
+            escaped=${escaped//$'\r'/'%0D'}
+            escaped=${escaped//$'\n'/'%0A'}
+            echo "::error file=apps/ios/Package.swift,line=1::swift test failed:%0A${escaped}"
+            exit "$status"
+          fi
+          output=$(swift run VoicePracticeTests 2>&1)
+          status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            escaped=${output//'%'/'%25'}
+            escaped=${escaped//$'\r'/'%0D'}
+            escaped=${escaped//$'\n'/'%0A'}
+            echo "::error file=apps/ios/Package.swift,line=1::swift run VoicePracticeTests failed:%0A${escaped}"
+            exit "$status"
+          fi
       - name: Test iOS App on Simulator
         run: |
           set -euo pipefail
