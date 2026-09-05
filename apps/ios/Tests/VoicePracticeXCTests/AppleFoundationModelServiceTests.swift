@@ -75,7 +75,8 @@ final class AppleFoundationModelServiceTests: XCTestCase {
         ]
         for (state, code) in cases {
             let service = AppleFoundationModelService(client: StubAppleFoundationModelClient(state: state))
-            XCTAssertEqual(await service.availability(localeIdentifier: "en-US").code, code)
+            let availability = await service.availability(localeIdentifier: "en-US")
+            XCTAssertEqual(availability.code, code)
         }
     }
 
@@ -185,7 +186,8 @@ final class AppleFoundationModelServiceTests: XCTestCase {
         } catch let error as AppleFoundationModelError {
             XCTAssertEqual(error.errorCode, "APPLE_MODEL_NOT_READY")
         } catch { XCTFail("Unexpected error") }
-        XCTAssertEqual(await client.recordedPrompts().count, 0)
+        let prompts = await client.recordedPrompts()
+        XCTAssertEqual(prompts.count, 0)
     }
 
     func testBridgeAppleSchemaForbidsEndpointCredentialAndModelFields() async {
