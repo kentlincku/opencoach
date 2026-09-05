@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kentlincku/opencoach/contracts/llm-runtime.schema.json",
+  "title": "Voice Practice LLM Runtime Capabilities v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "platform", "providers"],
+  "properties": {
+    "protocol": { "const": 1 },
+    "platform": {
+      "enum": ["browser", "macos", "windows", "ios", "android"]
+    },
+    "providers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "state", "authProduct"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "openai-compatible",
+              "chatgpt-subscription",
+              "grok-subscription",
+              "apple-foundation-models"
+            ],
+            "maxLength": 64
+          },
+          "state": {
+            "enum": [
+              "AVAILABLE",
+              "UNAVAILABLE_ACCURATELY_DISABLED"
+            ]
+          },
+          "authProduct": {
+            "enum": [
+              "api-key-or-none",
+              "chatgpt-subscription",
+              "grok-subscription",
+              "none"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Voice Practice",
+  "short_name": "Voice Practice",
+  "description": "Local-first English voice practice; only the configured LLM endpoint requires a network connection.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fff9f5",
+  "theme_color": "#ff6b8b",
+  "orientation": "any",
+  "icons": [
+    { "src": "./icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

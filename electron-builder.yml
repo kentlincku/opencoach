@@ -1,0 +1,58 @@
+appId: com.kentlin.voicepractice
+productName: Voice Practice
+asar: true
+directories:
+  output: dist
+  buildResources: build
+files:
+  - package.json
+  - apps/desktop/**
+  - apps/web/**
+  - resources/**
+extraResources:
+  - from: resources
+    to: manifests
+    filter:
+      - "*.json"
+mac:
+  category: public.app-category.education
+  icon: build/icon.icns
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+  extraResources:
+    - from: dist/voice-runtime
+      to: runtime
+      filter:
+        - "**/*"
+        - "!**/*.pyc"
+        - "!**/__pycache__"
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  extendInfo:
+    NSMicrophoneUsageDescription: Voice Practice uses the microphone only when you choose to record speech.
+    NSSpeechRecognitionUsageDescription: Voice Practice transcribes speech only when you choose to record.
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  createStartMenuShortcut: true
+  artifactName: Voice-Practice-Setup-${version}-${arch}.${ext}
+portable:
+  artifactName: Voice-Practice-Portable-${version}-${arch}.${ext}
+artifactName: Voice-Practice-${version}-${arch}.${ext}

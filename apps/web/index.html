@@ -1,0 +1,3726 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff6b8b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Voice Practice · 可愛虛擬英語教練 (Local-first)</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="apple-touch-icon" href="./icons/icon-256.png">
+    <!-- Runtime JavaScript is bundled from npm; models are fetched once and persisted locally. -->
+    <style>
+        :root {
+            --app-bg: #FFFDF9;
+            --card-bg: rgba(255, 255, 255, 0.92);
+            --primary-grad: linear-gradient(135deg, #FF6B8B 0%, #FF8E53 100%);
+            --secondary-grad: linear-gradient(135deg, #8338EC 0%, #3A86FF 100%);
+            --text-main: #2D3748;
+            --text-muted: #718096;
+            --shadow-sm: 0 4px 12px rgba(220, 190, 180, 0.12);
+            --shadow-md: 0 10px 25px rgba(220, 190, 180, 0.18);
+            --coach-theme: #FF6B8B;
+            --coach-light: #FFE5EC;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Nunito', 'Quicksand', "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(180deg, #FFF9F5 0%, #FFF5EE 50%, #FAF0E6 100%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 16px 20px 40px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .app-header {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border-radius: 24px;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 16px;
+        }
+
+        .header-title-group h1 {
+            font-size: 22px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #FF6B8B, #8338EC);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-title-group p {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            padding: 8px 14px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .icon-btn:hover {
+            transform: translateY(-2px);
+            border-color: #FF6B8B;
+        }
+
+        /* Tabs */
+        .tab-nav {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            border-bottom: 2px solid #F0ECE6;
+            padding-bottom: 4px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: 800;
+            color: #8A94A6;
+            cursor: pointer;
+            border-radius: 14px 14px 0 0;
+            transition: all 0.25s ease;
+        }
+
+        .tab-btn.active {
+            color: #FF6B8B;
+            border-bottom: 3px solid #FF6B8B;
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .lesson-practice-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: linear-gradient(135deg, #FFF7ED, #FDF2F8);
+            border: 1px solid #FDBA74;
+        }
+
+        .lesson-practice-actions {
+            display: flex;
+            flex: 0 0 auto;
+            gap: 8px;
+        }
+
+        /* Layout Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 20px;
+        }
+
+        .lan-http-warning {
+            display: none;
+            margin: 0 0 14px;
+            padding: 12px 14px;
+            border: 2px solid #F59E0B;
+            border-radius: 12px;
+            background: #FFFBEB;
+            color: #92400E;
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1.5;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.16);
+        }
+
+        .main-grid > *,
+        .text-input-row > *,
+        .settings-inline-row > * {
+            min-width: 0;
+        }
+
+        .text-input-row,
+        .settings-inline-row,
+        .settings-action-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        @media (max-width: 860px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                min-height: 100dvh;
+                padding: max(10px, env(safe-area-inset-top)) 10px max(20px, env(safe-area-inset-bottom));
+                overflow-x: hidden;
+            }
+            .app-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                padding: 14px;
+            }
+            .header-title-group h1 { font-size: 18px; }
+            .header-title-group p { display: none; }
+            .header-actions {
+                width: 100%;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 6px;
+            }
+            .header-actions .icon-btn { min-height: 44px; padding: 8px 10px; }
+            #offlineStatus { grid-column: 1 / -1; justify-content: center; }
+            #headerConnBadge { min-width: 0; overflow: hidden; }
+            #headerConnText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .tab-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+            .tab-btn { min-height: 48px; padding: 8px 6px; font-size: 13px; line-height: 1.25; }
+            .lesson-practice-banner { align-items: stretch; flex-direction: column; }
+            .lesson-practice-actions { display: grid; grid-template-columns: 1fr 1fr; }
+            .lesson-practice-actions .btn { min-height: 44px; padding: 8px 10px; }
+            .card, .virtual-coach-card { border-radius: 18px; padding: 14px; }
+            .chat-box { height: clamp(220px, 34dvh, 300px); }
+            .chat-msg { max-width: 95%; }
+            #micNotice { font-size: 12px !important; color: #64748B !important; line-height: 1.5; }
+            .control-row { flex-direction: column; }
+            .control-row > .btn, .settings-action-row > .btn { width: 100%; min-height: 48px; }
+            .text-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+            .text-input-row .btn { width: auto; min-height: 44px; padding-inline: 14px !important; }
+            .settings-inline-row, .settings-action-row { flex-direction: column; }
+            .settings-inline-row .icon-btn { width: 100%; min-height: 44px; justify-content: center; }
+            .form-input { width: 100%; max-width: 100%; min-width: 0; }
+            .modal-overlay {
+                padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+                align-items: flex-start;
+            }
+            .modal-card {
+                padding: 16px;
+                border-radius: 18px;
+                max-height: calc(100dvh - 16px);
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
+            }
+            .modal-header h2 { font-size: 18px; line-height: 1.25; }
+            .close-btn { min-width: 44px; min-height: 44px; }
+        }
+
+        /* Glass Cards */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border-radius: 24px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: var(--shadow-md);
+            margin-bottom: 16px;
+        }
+
+        /* Chatbot Container */
+        .chat-box {
+            height: 380px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            padding-right: 8px;
+            margin-bottom: 16px;
+        }
+
+        .chat-msg {
+            display: flex;
+            gap: 10px;
+            max-width: 85%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .chat-msg.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .chat-msg.assistant {
+            align-self: flex-start;
+        }
+
+        .msg-bubble {
+            padding: 12px 18px;
+            border-radius: 18px;
+            font-size: 14.5px;
+            line-height: 1.5;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .chat-msg.user .msg-bubble {
+            background: linear-gradient(135deg, #FF6B8B, #FF8E53);
+            color: #FFFFFF;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-msg.assistant .msg-bubble {
+            background: #FFFFFF;
+            color: var(--text-main);
+            border-bottom-left-radius: 4px;
+            border: 1px solid #F0ECE6;
+        }
+
+        .msg-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            background: #FFFFFF;
+            box-shadow: var(--shadow-sm);
+            flex-shrink: 0;
+        }
+
+        /* Controls */
+        .control-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border-radius: 18px;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-start {
+            background: var(--primary-grad);
+            color: #FFFFFF;
+            box-shadow: 0 6px 18px rgba(255, 107, 139, 0.35);
+            flex: 2;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 22px rgba(255, 107, 139, 0.45);
+        }
+
+        .btn-stop {
+            background: #FFFFFF;
+            color: #64748B;
+            border: 1px solid #E2E8F0;
+            box-shadow: var(--shadow-sm);
+            flex: 1;
+        }
+
+        .btn-stop:hover {
+            color: #EF4444;
+            border-color: #FECACA;
+        }
+
+        .btn-shadow {
+            background: var(--secondary-grad);
+            color: #FFFFFF;
+            width: 100%;
+            box-shadow: 0 6px 18px rgba(131, 56, 236, 0.28);
+        }
+
+        .btn-shadow:hover {
+            transform: translateY(-2px) scale(1.02);
+        }
+
+        /* Virtual Coach Stage */
+        .virtual-coach-card {
+            background: var(--card-bg);
+            border-radius: 24px;
+            padding: 20px;
+            border: 2px solid var(--coach-light);
+            box-shadow: var(--shadow-md);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .virtual-coach-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: var(--coach-theme);
+        }
+
+        .coach-header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .coach-tag {
+            font-size: 15px;
+            font-weight: 800;
+            background: #FFFFFF;
+            padding: 4px 12px;
+            border-radius: 16px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .status-pill {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(16, 185, 129, 0.12);
+            color: #10B981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 1.4s infinite;
+        }
+
+        .coach-stage {
+            width: 160px;
+            height: 160px;
+            position: relative;
+            margin: 10px 0 14px;
+        }
+
+        .coach-info h3 {
+            font-size: 15px;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .coach-info p {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .coach-select-trigger {
+            margin-top: 14px;
+            width: 100%;
+            background: #FFFFFF;
+            border: 1px dashed var(--coach-theme);
+            color: var(--coach-theme);
+            padding: 8px;
+            border-radius: 14px;
+            font-weight: 800;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .coach-select-trigger:hover {
+            background: var(--coach-light);
+        }
+
+        /* Lessons Section */
+        .lesson-item {
+            background: #FFFFFF;
+            border: 1px solid #EAE5DF;
+            border-radius: 16px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .lesson-item:hover {
+            border-color: #FF6B8B;
+            transform: translateY(-2px);
+        }
+
+        .lesson-item.active {
+            border-color: #FF6B8B;
+            background: #FFF5F7;
+            box-shadow: 0 4px 14px rgba(255, 107, 139, 0.15);
+        }
+
+        .lesson-item.locked {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .lesson-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+
+        /* SVG Animations */
+        .character-body-group {
+            transform-origin: 100px 150px;
+            animation: floatBob 3.6s ease-in-out infinite;
+        }
+
+        @keyframes floatBob {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .state-speaking .character-body-group {
+            animation: speakBounce 0.45s ease-in-out infinite alternate;
+        }
+
+        @keyframes speakBounce {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-4px); }
+        }
+
+        .avatar-eyes {
+            animation: eyeBlink 3.8s infinite;
+            transform-origin: 100px 97px;
+        }
+
+        @keyframes eyeBlink {
+            0%, 46%, 50%, 100% { transform: scaleY(1); }
+            48% { transform: scaleY(0.1); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(0.9); opacity: 0.8; }
+            50% { transform: scale(1.3); opacity: 1; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-card {
+            background: #FFFFFF;
+            border-radius: 24px;
+            padding: 24px;
+            width: 100%;
+            max-width: 560px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-md);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: #94A3B8;
+        }
+
+        .coach-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 12px;
+        }
+
+        .coach-choice-item {
+            border: 2px solid #F0ECE6;
+            border-radius: 16px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .coach-choice-item:hover, .coach-choice-item.active {
+            border-color: #FF6B8B;
+            background: #FFE5EC;
+            transform: translateY(-2px);
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-main);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #CBD5E1;
+            border-radius: 12px;
+            font-size: 14px;
+            outline: none;
+            font-family: inherit;
+        }
+
+        .form-input:focus {
+            border-color: #FF6B8B;
+            box-shadow: 0 0 0 3px rgba(255, 107, 139, 0.2);
+        }
+
+        .quick-preset-btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .preset-pill {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 8px;
+            background: #F1F5F9;
+            border: 1px solid #E2E8F0;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .preset-pill:hover {
+            background: #FFE5EC;
+            border-color: #FF6B8B;
+            color: #FF6B8B;
+        }
+
+        /* Shadowing Result Box */
+        .shadow-result-box {
+            margin-top: 12px;
+            padding: 14px;
+            background: #FFFFFF;
+            border-radius: 16px;
+            border: 1px solid #F0ECE6;
+        }
+
+        .word-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .word-chip {
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        /* Native iOS app shell: keep browser/PWA document scrolling unchanged. */
+        html.native-ios-app {
+            width: 100%;
+            height: var(--native-app-height, 100dvh);
+            overflow: hidden;
+            overscroll-behavior: none;
+            position: fixed;
+            inset: 0;
+        }
+
+        html.native-ios-app body {
+            width: 100%;
+            height: var(--native-app-height, 100dvh);
+            min-height: 0;
+            overflow: hidden;
+            overscroll-behavior: none;
+            padding: max(12px, env(safe-area-inset-top)) 20px max(12px, env(safe-area-inset-bottom));
+        }
+
+        .native-ios-app .container {
+            width: 100%;
+            height: 100%;
+            max-width: 1100px;
+            display: grid;
+            grid-template-rows: auto auto auto minmax(0, 1fr);
+            overflow: hidden;
+        }
+
+        .native-ios-app .app-header,
+        .native-ios-app .tab-nav {
+            min-width: 0;
+            flex: 0 0 auto;
+        }
+
+        .native-ios-app .main-grid {
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            scroll-padding-top: 8px;
+            scroll-padding-bottom: max(24px, env(safe-area-inset-bottom));
+        }
+
+        .native-ios-app .chat-box {
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .native-ios-app .modal-overlay {
+            height: var(--native-app-height, 100dvh);
+            max-height: var(--native-app-height, 100dvh);
+            overflow: hidden;
+            overscroll-behavior: none;
+            padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+            align-items: flex-start;
+        }
+
+        .native-ios-app .modal-card {
+            max-height: calc(var(--native-app-height, 100dvh) - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        @media (max-width: 480px) {
+            html.native-ios-app body {
+                padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom));
+            }
+
+            .native-ios-app .app-header {
+                margin-bottom: 8px;
+                padding: 10px 12px;
+                gap: 8px;
+            }
+
+            .native-ios-app .tab-nav {
+                margin-bottom: 8px;
+            }
+
+            .native-ios-app .main-grid {
+                gap: 12px;
+            }
+
+            .native-ios-app .card,
+            .native-ios-app .virtual-coach-card {
+                border-radius: 18px;
+                padding: 14px;
+            }
+
+            .native-ios-app .chat-box {
+                height: clamp(220px, 34dvh, 300px);
+            }
+
+            .native-ios-app .modal-card {
+                padding: 16px;
+                border-radius: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-title-group">
+            <h1><span>✨</span> Voice Practice <span>💖</span></h1>
+        </div>
+        <div class="header-actions">
+            <div class="icon-btn" id="offlineStatus" title="Local-first PWA status">⏳ 離線資產安裝中</div>
+            <div class="icon-btn" id="headerConnBadge" onclick="openSettingsModal()" style="cursor: pointer; background: #F8FAFC;">
+                <span class="status-dot" id="headerConnDot" style="background: #F59E0B;"></span>
+                <span id="headerConnText" style="font-size: 12px; font-weight: 700; color: #475569;">🟡 OpenAI-compatible API: 尚未設定模型</span>
+            </div>
+            <button class="icon-btn" onclick="openSettingsModal()">⚙️ 設定大腦 AI 模型</button>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" id="tabBtnFree" onclick="switchTab('free')">💬 自由對話練習</button>
+        <button class="tab-btn" id="tabBtnLesson" onclick="switchTab('lesson')">📚 系統化關卡 (<span id="lessonCount">0</span>課)</button>
+    </nav>
+
+    <div id="activeLanHttpWarning" class="lan-http-warning" role="alert" aria-live="polite"></div>
+
+    <!-- Main Grid -->
+    <main class="main-grid">
+        <!-- Left: Chat & Action -->
+        <section>
+            <!-- Tab Content: Free Chat -->
+            <div id="sectionFreeChat">
+                <div class="card lesson-practice-banner" id="lessonPracticeBanner">
+                    <div>
+                        <div style="font-size: 11px; color: #9A3412; font-weight: 800;">📚 課程練習中</div>
+                        <div id="currentLessonTitle" style="font-size: 16px; font-weight: 900; margin-top: 2px;"></div>
+                    </div>
+                    <div class="lesson-practice-actions">
+                        <button type="button" class="btn" style="background:#FFFFFF; color:#475569;" onclick="returnToLessonList()">← 返回關卡</button>
+                        <button type="button" class="btn btn-start" onclick="completeCurrentLesson()">✓ 完成本課</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="chat-box" id="chatBox">
+                        <div class="chat-msg assistant">
+                            <div class="msg-avatar" id="msgAvatarIcon">💖</div>
+                            <div class="msg-bubble">
+                                Hi there! I'm Heart, your AI English coach. Ready to practice speaking? Click <b>Start</b> and talk to me!
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="control-row">
+                        <button class="btn btn-start" id="startBtn" onclick="toggleConversation()">
+                            <span id="btnIcon">▶</span> <span id="btnText">開始語音對話 (Start)</span>
+                        </button>
+                        <button class="btn btn-stop" onclick="stopConversation()">⏹ 停止</button>
+                    </div>
+
+                    <!-- Dual-mode Input Bar -->
+                    <div class="text-input-row" style="margin-top: 12px;">
+                        <input type="text" id="userTextInput" class="form-input"
+                               placeholder="💬 輸入英文…"
+                               onkeydown="if(event.key==='Enter') sendManualText()">
+                        <button class="btn btn-start" style="padding: 10px 18px; flex: 0 0 auto;" onclick="sendManualText()">➤ 發送</button>
+                    </div>
+                    <div id="micNotice" style="font-size: 11.5px; color: #94A3B8; margin-top: 6px; text-align: center;">
+                        🎙️ 語音辨識使用中（若瀏覽器提示請點擊「允許麥克風」）
+                    </div>
+                    <div id="kokoroDebugLog" style="display: none; font-size: 11.5px; color: #8338EC; background: #F3E8FF; padding: 4px 8px; border-radius: 6px; margin-top: 6px; text-align: center;"></div>
+                </div>
+
+                <!-- Pronunciation Shadowing Box -->
+                <div class="card">
+                    <h3 style="font-size: 15px; margin-bottom: 6px;">🎯 發音跟讀評分 (Shadowing Coach)</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                        點擊按鈕跟讀教練上一句話，AI 將即時分析你的發音完整度！
+                    </p>
+                    <button class="btn btn-shadow" onclick="startShadowing()">🎙️ 跟讀上一句並評分</button>
+                    <div id="shadowResultBox" class="shadow-result-box" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Tab Content: Lesson Syllabus -->
+            <div id="sectionLesson" style="display: none;">
+                <div class="card">
+                    <div class="settings-inline-row" style="justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h3 style="font-size: 16px;">🗺️ 系統化關卡學習地圖</h3>
+                        <button type="button" class="icon-btn" onclick="openLessonManager()">⚙️ 管理／匯入匯出</button>
+                    </div>
+                    <div id="lessonListContainer"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right: Animated Virtual Avatar -->
+        <aside>
+            <div class="virtual-coach-card" id="coachCard">
+                <div class="coach-header">
+                    <span class="coach-tag" id="coachHeaderTag">💖 Heart</span>
+                    <span class="status-pill" id="statusPill">
+                        <span class="status-dot"></span>
+                        <span id="statusLabel">✨ 隨時可以開始</span>
+                    </span>
+                </div>
+
+                <div class="coach-stage" id="avatarStage"></div>
+
+                <div class="coach-info">
+                    <h3 id="coachTitle">溫暖活力教練</h3>
+                    <p id="coachDesc">發音溫柔清晰，極具耐心，最適合輕鬆自然的日常對話練習。</p>
+                    <p id="ttsEngineLabel" style="margin-top: 8px; font-size: 11px; font-weight: 800; color: #64748B;">🔊 語音引擎：準備中</p>
+                </div>
+
+                <button class="coach-select-trigger" onclick="openCoachModal()">🎭 更換教練角色 ▾</button>
+            </div>
+        </aside>
+    </main>
+</div>
+
+<!-- Local-first Lesson Library Manager -->
+<div class="modal-overlay" id="lessonManagerModal" onclick="if(event.target===this) closeLessonManager()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2>📚 自訂課程庫</h2>
+            <button class="close-btn" onclick="closeLessonManager()" title="關閉">&times;</button>
+        </div>
+        <p style="font-size:12px; color:#64748B; line-height:1.5; margin-bottom:10px;">
+            課程只保存在此裝置。可直接編輯 JSON，或匯入／匯出備份。欄位：id、title、level、objectives、opening_line。
+        </p>
+        <textarea id="lessonJsonEditor" class="form-input" spellcheck="false" style="min-height:300px; resize:vertical; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; line-height:1.45;"></textarea>
+        <div id="lessonManagerResult" style="display:none; font-size:12px; margin-top:8px;"></div>
+        <div class="form-group" style="margin-top:10px;">
+            <label for="lessonImportMode">匯入方式</label>
+            <select id="lessonImportMode" class="form-input">
+                <option value="merge">合併（相同 id 以匯入內容更新）</option>
+                <option value="replace">取代整個課程庫</option>
+            </select>
+        </div>
+        <input id="lessonImportFile" type="file" accept="application/json,.json" hidden onchange="importLessonFile(event)">
+        <div class="settings-action-row" style="margin-top:10px;">
+            <button type="button" class="btn" style="background:#EEF2FF; color:#4338CA;" onclick="document.getElementById('lessonImportFile').click()">⬆ 匯入</button>
+            <button type="button" class="btn" style="background:#ECFDF5; color:#047857;" onclick="exportLessonLibrary()">⬇ 匯出</button>
+            <button type="button" class="btn" style="background:#FFF7ED; color:#C2410C;" onclick="restoreDefaultLessons()">↺ 恢復範例</button>
+        </div>
+        <button type="button" class="btn btn-start" style="width:100%; margin-top:10px;" onclick="saveLessonEditor()">儲存課程庫</button>
+    </div>
+</div>
+
+<!-- Coach Selection Modal -->
+<div class="modal-overlay" id="coachModal" onclick="if(event.target===this) closeCoachModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2>🎭 選擇你喜歡的英語教練 (8位)</h2>
+            <button class="close-btn" onclick="closeCoachModal()" title="關閉">&times;</button>
+        </div>
+        <div class="coach-grid" id="coachGrid"></div>
+        <button type="button" class="btn" style="width: 100%; margin-top: 14px; background: #F1F5F9; color: #475569;" onclick="closeCoachModal()">✕ 關閉視窗</button>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal" onclick="if(event.target===this) closeSettingsModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2>⚙️ 大腦 API 連線設定 (LLM Settings)</h2>
+            <button class="close-btn" onclick="closeSettingsModal()" title="關閉">&times;</button>
+        </div>
+        <div class="form-group">
+            <label>選擇連線方式 (Connection)</label>
+            <select id="providerSelect" class="form-input" style="font-weight: 700; cursor: pointer;" onchange="onProviderSelectChange()">
+                <optgroup label="裝置本機" id="nativeAppleProviderGroup" hidden>
+                    <option id="appleIntelligenceProviderOption" value="apple-foundation-models" hidden disabled> Apple Intelligence（本機）</option>
+                </optgroup>
+                <optgroup label="通用 API／本機端點">
+                    <option value="openai-compatible">🔌 OpenAI-compatible API</option>
+                </optgroup>
+                <optgroup label="訂閱登入（Desktop）">
+                    <option value="chatgpt-subscription" disabled>🔐 ChatGPT／Codex訂閱</option>
+                    <option value="grok-subscription" disabled>🔐 Grok／SuperGrok訂閱</option>
+                </optgroup>
+            </select>
+        </div>
+        <div class="form-group" id="apiBaseUrlGroup">
+            <div id="directApiPresetGroup">
+                <label for="directApiPreset">快速設定（API Key）</label>
+                <select id="directApiPreset" class="form-input" style="font-weight:700; cursor:pointer; margin-bottom:8px;" onchange="applyDirectApiPreset()">
+                    <option value="custom">自訂／本機OpenAI-compatible端點</option>
+                    <option value="omlx">oMLX（這台Mac）</option>
+                    <option value="openai">OpenAI API</option>
+                    <option value="gemini">Google Gemini API Key</option>
+                    <option value="llamacpp">llama.cpp（本機 8080）</option>
+                    <option value="ollama">Ollama（本機 11434）</option>
+                    <option value="lmstudio">LM Studio（本機 1234）</option>
+                    <option value="omlx">oMLX（本機 8000）</option>
+                </select>
+            </div>
+            <label>API Base URL (端點網址)</label>
+            <input type="text" id="apiBaseUrl" class="form-input" placeholder="http://localhost:8000/v1" oninput="onApiBaseUrlInput()">
+            <div id="localEndpointNotice" style="font-size: 11.5px; color: #64748B; margin-top: 4px;"></div>
+        </div>
+        <div class="form-group" id="apiKeyGroup">
+            <div class="settings-inline-row" style="justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label style="margin-bottom: 0;">API Key (金鑰 / 帳號授權)</label>
+                <button type="button" class="icon-btn" style="padding: 3px 8px; font-size: 11px;" onclick="fetchModelsFromProvider()">🔍 從端點取得模型</button>
+            </div>
+            <input type="password" id="apiKey" class="form-input" placeholder="選填；本機或免驗證端點可留空" oninput="debouncedFetchModels()">
+            <small id="apiKeyHint" style="color: #94A3B8; font-size: 11px; margin-top: 4px; display: block;">API Key 選填，只保存在此裝置，並僅傳送至你填寫的端點；訂閱 OAuth 憑證由桌面 Bridge 保存，不進入本頁。</small>
+        </div>
+        <div class="form-group" id="subscriptionAuthGroup" style="display:none; padding:12px; background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px;">
+            <div id="subscriptionAuthStatus" style="font-size:12px; font-weight:700; color:#475569; margin-bottom:8px;">尚未登入</div>
+            <div id="subscriptionVerification" style="display:none; font-size:12px; line-height:1.6; margin-bottom:8px;">
+                <a id="subscriptionVerificationLink" href="#" target="_blank" rel="noopener noreferrer">開啟供應商登入頁</a>
+                <div>驗證碼：<code id="subscriptionUserCode"></code></div>
+            </div>
+            <div class="settings-action-row">
+                <button type="button" id="subscriptionLoginBtn" class="btn btn-start" onclick="beginSubscriptionLogin()">登入訂閱帳號</button>
+                <button type="button" id="subscriptionPollBtn" class="btn btn-stop" style="display:none;" onclick="pollSubscriptionLogin()">完成後檢查登入</button>
+                <button type="button" id="subscriptionCancelBtn" class="btn" style="display:none;" onclick="cancelSubscriptionLogin()">取消</button>
+                <button type="button" id="subscriptionLogoutBtn" class="btn btn-stop" style="display:none;" onclick="logoutSubscription()">登出</button>
+            </div>
+            <small style="display:block; color:#64748B; margin-top:8px;">授權token只由Desktop Main Process保存於作業系統安全儲存；Renderer不會取得token。</small>
+        </div>
+
+        <div class="form-group" id="modelGroup">
+            <label>選擇可用模型（由目前連線即時回傳）</label>
+            <div class="settings-inline-row">
+                <select id="modelSelect" class="form-input" style="cursor: pointer;" onchange="onModelDropdownChange()">
+                    <option value="">🔍 正在從端點取得模型清單...</option>
+                </select>
+                <button type="button" class="icon-btn" id="toggleManualModelBtn" style="flex: 0 0 auto; font-size: 12px;" onclick="toggleManualModelInput()" title="手動輸入自訂模型名稱">✏️ 手動輸入</button>
+            </div>
+            <input type="text" id="apiModel" class="form-input" placeholder="自訂模型名稱" style="display: none; margin-top: 6px;" oninput="onManualModelInput()">
+            <div id="modelDetectNotice" style="font-size: 11.5px; color: #10B981; margin-top: 4px;"></div>
+            <div id="migrationNotice" style="font-size: 11.5px; color: #D97706; margin-top: 4px;"></div>
+        </div>
+        <div class="form-group" id="appleIntelligenceStatus" style="display:none; padding:12px; background:#F5F3FF; border:1px solid #DDD6FE; border-radius:12px; color:#5B21B6; font-size:12px; line-height:1.5;" role="status" aria-live="polite"></div>
+        <div class="form-group" style="padding: 10px 12px; background: #FFF8E8; border-radius: 12px; border: 1px solid #FDE68A;">
+            <label for="ttsModeSelect">選擇語音引擎 (TTS)</label>
+            <select id="ttsModeSelect" class="form-input" style="font-weight: 700; cursor: pointer;">
+                <option value="auto">✨ Auto（Web 系統語音；桌面 Kokoro）</option>
+                <option value="system">🖥️ 系統語音（本機）</option>
+                <option id="kokoroTtsOption" value="kokoro">🎙️ Kokoro（下載後本機執行）</option>
+            </select>
+            <small id="ttsModeHint" style="display:block; color:#92400E; font-weight:600; margin-top:6px;">Kokoro 在 Web 首次使用需下載模型；若模型不可用，會安全退回系統語音。</small>
+        </div>
+        <div class="settings-action-row" style="gap: 10px; margin-top: 12px;">
+            <button type="button" class="btn btn-stop" style="flex: 1;" onclick="testApiConnection()">⚡ 測試連線</button>
+            <button type="button" class="btn btn-start" style="flex: 2;" onclick="saveSettings()">儲存設定</button>
+        </div>
+        <div id="testConnResult" style="font-size: 12px; margin-top: 8px; text-align: center; display: none;"></div>
+        <button type="button" class="btn" style="width: 100%; margin-top: 10px; background: #F1F5F9; color: #475569;" onclick="closeSettingsModal()">✕ 關閉視窗</button>
+    </div>
+</div>
+
+<script src="./runtime/llm-provider-contract.js"></script>
+<script src="./runtime/runtime-contract.js"></script>
+<script src="./runtime/browser-runtime.js"></script>
+<script src="./runtime/electron-runtime.js"></script>
+<script src="./runtime/android-runtime.js"></script>
+<script src="./runtime/create-runtime.js"></script>
+<script src="./runtime/language-policy.js"></script>
+<script src="./runtime/tts-preference.js"></script>
+<script src="./runtime/model-cache.js"></script>
+<script src="./runtime/lesson-library.js"></script>
+<script src="./runtime/direct-api-presets.js"></script>
+<script src="./runtime/local-endpoint-policy.js"></script>
+<script>
+// --- Lessons Database ---
+const DEFAULT_LESSONS = [
+    {
+        id: "self-intro",
+        title: "Self-Introduction & Greetings",
+        level: "Beginner",
+        objectives: ["Introduce yourself with name, origin, and occupation", "Use greetings", "Ask WH-questions"],
+        opening_line: "Hi! Let's start by getting to know each other a little. Go ahead and introduce yourself."
+    },
+    {
+        id: "ordering-food",
+        title: "Ordering Food at a Restaurant",
+        level: "Beginner",
+        objectives: ["Order a meal politely", "Ask about menu recommendations", "Handle a simple substitution request"],
+        opening_line: "Welcome! I'll be your server today -- what can I get started for you?"
+    },
+    {
+        id: "directions",
+        title: "Asking for and Giving Directions",
+        level: "Beginner-Intermediate",
+        objectives: ["Ask how to get somewhere", "Understand directions", "Confirm understanding"],
+        opening_line: "Excuse me, I think I'm a bit lost -- could you help me find the train station?"
+    },
+    {
+        id: "past-tense-story",
+        title: "Telling a Story in the Past Tense",
+        level: "Intermediate",
+        objectives: ["Narrate a past event with correct past tense", "Sequence events with time words", "Describe feelings"],
+        opening_line: "Tell me about something interesting that happened to you recently."
+    },
+    {
+        id: "opinions",
+        title: "Expressing Opinions & Agreeing/Disagreeing",
+        level: "Intermediate",
+        objectives: ["State an opinion clearly", "Agree/disagree politely with reason", "Ask for opinion"],
+        opening_line: "Here's a topic for us to discuss: do you think remote work is better than working in an office? What's your take?"
+    },
+    {
+        id: "job-interview",
+        title: "Job Interview Basics",
+        level: "Intermediate-Advanced",
+        objectives: ["Describe strengths and experience", "Answer interview questions with examples", "Ask role questions"],
+        opening_line: "Let's do a quick mock interview. Thanks for coming in -- to start, can you tell me a bit about yourself?"
+    },
+    {
+        id: "travel-english",
+        title: "Travel English",
+        level: "Advanced",
+        objectives: ["Handle hotel/airport check-in", "Deal with travel problems", "Ask for recommendations"],
+        opening_line: "Good afternoon, welcome to the hotel! Do you have a reservation with us?"
+    }
+];
+let lessons = window.VoiceLessonLibrary.loadLessons(localStorage, DEFAULT_LESSONS);
+
+// --- Persona Definitions ---
+const PERSONAS = {
+    af_heart:   { id: "af_heart",   name: "Heart",   emoji: "💖", title: "溫暖活力教練", desc: "發音溫柔清晰，極具耐心，最適合輕鬆日常對話。", color: "#FF6B8B", light: "#FFE5EC", hair: "#FF758F" },
+    af_bella:   { id: "af_bella",   name: "Bella",   emoji: "⭐", title: "活潑陽光教練", desc: "語調生動明快，滿滿正能量，開口練習不緊張！", color: "#F48C06", light: "#FFF3D6", hair: "#E85D04" },
+    af_nicole:  { id: "af_nicole",  name: "Nicole",  emoji: "🌸", title: "溫柔優雅導師", desc: "發音標準典雅，語速均勻，提升語感最佳夥伴。", color: "#8338EC", light: "#F3E8FF", hair: "#6A26CD" },
+    af_sky:     { id: "af_sky",     name: "Sky",     emoji: "☁️", title: "清新爽朗夥伴", desc: "自然輕快、如同朋友般的真實交流感。", color: "#0096C7", light: "#E0F7FA", hair: "#0077B6" },
+    am_adam:    { id: "am_adam",    name: "Adam",    emoji: "🌿", title: "沉穩智慧導師", desc: "低沉磁性、循循善誘，提供穩定的口說引導。", color: "#2D6A4F", light: "#E8F5E9", hair: "#1B4332" },
+    am_michael: { id: "am_michael", name: "Michael", emoji: "🔥", title: "幽默風趣夥伴", desc: "語氣隨和幽默，擅長美式生活俚語，氣氛超歡樂！", color: "#D00000", light: "#FFEBEB", hair: "#9D0208" },
+    am_onyx:    { id: "am_onyx",    name: "Onyx",    emoji: "🌙", title: "知性深沉導師", desc: "聲線深沉迷人，專注於商務與深度話題交流。", color: "#3D5A80", light: "#EBF2F7", hair: "#293241" },
+    am_fenrir:  { id: "am_fenrir",  name: "Fenrir",  emoji: "⚡", title: "熱血冒險夥伴", desc: "充滿自信與感染力，激勵你突破口說瓶頸！", color: "#E63946", light: "#FFF0F3", hair: "#BA181B" }
+};
+
+const PERSONA_VOICE_CONFIG = {
+    af_heart:   { pitch: 1.02, rate: 0.98, names: ["Jenny", "Ava", "Samantha", "Aria", "Google US English"] },
+    af_bella:   { pitch: 1.04, rate: 1.02, names: ["Aria", "Victoria", "Ava", "Samantha", "Google US English"] },
+    af_nicole:  { pitch: 0.98, rate: 0.94, names: ["Sonia", "Libby", "Karen", "Moira", "Serena"] },
+    af_sky:     { pitch: 1.00, rate: 0.98, names: ["Sara", "Tessa", "Allison", "Ava", "Google US English"] },
+    am_adam:    { pitch: 0.96, rate: 0.94, names: ["Guy", "Ryan", "Daniel", "Christopher", "Google UK English Male"] },
+    am_michael: { pitch: 1.00, rate: 1.00, names: ["Christopher", "Eric", "Alex", "Guy", "Google US English Male"] },
+    am_onyx:    { pitch: 0.92, rate: 0.90, names: ["Brian", "Arthur", "Daniel", "Fred", "Ryan"] },
+    am_fenrir:  { pitch: 0.98, rate: 1.04, names: ["Steffan", "Tom", "George", "Christopher", "Eric"] }
+};
+
+let currentVoiceId = "af_heart";
+let currentMode = "free"; // "free" | "lesson"
+let currentLessonId = null;
+let isRunning = false;
+const ENGLISH_COACH_SYSTEM_PROMPT = "You are a friendly, encouraging English conversation coach. Respond only in natural English, even if the student speaks another language. Never output Chinese, Japanese, Korean, CJK characters, translations, or language labels. Keep every response concise (1-3 sentences), natural, and engaging.";
+let messages = [{ role: "system", content: ENGLISH_COACH_SYSTEM_PROMPT }];
+let voiceRuntime = null;
+let llmTurnGeneration = 0;
+
+function getTtsMode() {
+    const stored = localStorage.getItem("vp_ttsMode");
+    const requested = stored === null && localStorage.getItem("vp_enableBrowserKokoro") === "true" ? "kokoro" : stored;
+    return window.VoiceTtsPreference.resolveBrowserTtsMode({
+        storedMode: requested,
+        isIosBrowser: isIosBrowserEnvironment()
+    });
+}
+
+function isIosBrowserEnvironment() {
+    if (window.electronAPI) return false;
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+async function createVoiceRuntime() {
+    voiceRuntime = await window.VoiceRuntimeFactory.createRuntime({
+        androidBridge: window.voiceNativeBridge || null,
+        electronAPI: window.electronAPI || null,
+        browser: {
+            transcribe: transcribeBrowserAudio,
+            synthesize: synthesizeBrowserSpeech,
+            cancel: stopCurrentVoicePlayback,
+            dispose: stopCurrentVoicePlayback,
+        }
+    });
+    return voiceRuntime;
+}
+
+let availableVoices = [];
+function loadVoices() {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    availableVoices = window.speechSynthesis.getVoices()
+        .filter(voice => voice.lang.startsWith("en") && voice.localService === true);
+}
+if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function findBestVoiceForPersona(vid) {
+    loadVoices();
+    const config = PERSONA_VOICE_CONFIG[vid] || PERSONA_VOICE_CONFIG.af_heart;
+
+    for (const name of config.names) {
+        const exact = availableVoices.find(v => v.name.toLowerCase() === name.toLowerCase());
+        if (exact) return exact;
+        const partial = availableVoices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+        if (partial) return partial;
+    }
+
+    return availableVoices.find(v => /^en-US/i.test(v.lang))
+        || availableVoices[0]
+        || null;
+}
+
+function setTTSEngineStatus(label, color = "#64748B") {
+    const el = document.getElementById("ttsEngineLabel");
+    if (!el) return;
+    el.textContent = `🔊 語音引擎：${label}`;
+    el.style.color = color;
+}
+
+// Render Animated Avatar SVG
+function renderAvatarSVG(vid, state = "idle") {
+    const p = PERSONAS[vid] || PERSONAS.af_heart;
+    let mouth = '<path d="M 92 113 Q 100 120 108 113" stroke="#333" stroke-width="2.5" stroke-linecap="round" fill="none" />';
+    if (state === "speaking") {
+        mouth = `<ellipse cx="100" cy="116" rx="8" ry="7" fill="#E63946">
+            <animate attributeName="ry" values="3;9;5;10;4;8;3" dur="0.5s" repeatCount="indefinite" />
+        </ellipse>`;
+    } else if (state === "thinking") {
+        mouth = '<path d="M 94 116 Q 100 113 106 117" stroke="#333" stroke-width="2.5" stroke-linecap="round" fill="none" />';
+    }
+
+    return `
+    <svg viewBox="0 0 200 200" width="100%" height="100%" class="character-svg state-${state}">
+        <circle cx="100" cy="100" r="92" fill="${p.light}" stroke="${p.color}" stroke-width="2.5" />
+        <g class="character-body-group">
+            <path d="M 60 178 Q 100 152 140 178 L 148 200 L 52 200 Z" fill="${p.color}" />
+            <path d="M 86 142 L 100 162 L 114 142 Z" fill="#FFF" />
+            <rect x="91" y="128" width="18" height="20" rx="9" fill="#FDEDE8" />
+            <ellipse cx="100" cy="98" rx="46" ry="48" fill="${p.hair}" />
+            <ellipse cx="100" cy="102" rx="38" ry="36" fill="#FDEDE8" />
+            <ellipse cx="73" cy="112" rx="6" ry="3.5" fill="#FF8DA1" opacity="0.65" />
+            <ellipse cx="127" cy="112" rx="6" ry="3.5" fill="#FF8DA1" opacity="0.65" />
+            ${mouth}
+            <g class="avatar-eyes">
+                <ellipse cx="82" cy="97" rx="7" ry="9" fill="#333" />
+                <circle cx="80" cy="94" r="2.8" fill="#FFF" />
+                <ellipse cx="118" cy="97" rx="7" ry="9" fill="#333" />
+                <circle cx="116" cy="94" r="2.8" fill="#FFF" />
+            </g>
+            <path d="M 64 88 C 65 62, 135 62, 136 88 C 128 78, 115 76, 100 84 C 85 76, 72 78, 64 88 Z" fill="${p.hair}" />
+        </g>
+    </svg>`;
+}
+
+function updateCoachUI(state = "idle") {
+    const p = PERSONAS[currentVoiceId];
+    document.getElementById("avatarStage").innerHTML = renderAvatarSVG(currentVoiceId, state);
+    document.getElementById("coachHeaderTag").innerText = `${p.emoji} ${p.name}`;
+    document.getElementById("coachTitle").innerText = p.title;
+    document.getElementById("coachDesc").innerText = p.desc;
+    const msgAvatar = document.getElementById("msgAvatarIcon");
+    if (msgAvatar) msgAvatar.innerText = p.emoji;
+    document.getElementById("coachCard").style.setProperty("--coach-theme", p.color);
+    document.getElementById("coachCard").style.setProperty("--coach-light", p.light);
+
+    const statusMap = {
+        idle: { label: "✨ 隨時可以開始", color: "#10B981" },
+        listening: { label: "🎤 正在聆聽中...", color: "#00B4D8" },
+        thinking: { label: "💭 正在思考中...", color: "#8338EC" },
+        speaking: { label: "🔊 正在說話...", color: "#FF4D6D" }
+    };
+    const s = statusMap[state] || statusMap.idle;
+    document.getElementById("statusLabel").innerText = s.label;
+    document.getElementById("statusPill").style.color = s.color;
+    document.getElementById("statusPill").style.borderColor = s.color + "40";
+}
+
+// Conversation Control Loop
+async function toggleConversation() {
+    if (isMediaRecording) {
+        stopMediaRecording();
+        return;
+    }
+
+    if (isRunning) {
+        stopConversation();
+        return;
+    }
+
+    // Request Mic Access, then immediately release this permission-probe stream.
+    if (voiceRuntime?.kind !== "android" && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+            const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            permissionStream.getTracks().forEach(track => track.stop());
+        } catch (e) {
+            console.warn("Mic access request failed:", e);
+            document.getElementById("micNotice").innerHTML =
+                '<span style="color:#EF4444;">⚠️ 麥克風未授權。請允許麥克風，或直接在下方打字練習！</span>';
+        }
+    }
+
+    isRunning = true;
+    document.getElementById("btnIcon").innerText = "⏹";
+    document.getElementById("btnText").innerText = "停止對話 (Stop)";
+    startListeningTurn();
+}
+
+async function stopConversation() {
+    llmTurnGeneration += 1;
+    window.voiceNativeBridge?.cancelAppleFoundationModelRequests?.();
+    isRunning = false;
+    isMediaRecording = false;
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+        try { mediaRecorder.stop(); } catch(e){}
+    }
+    const cancellation = voiceRuntime ? voiceRuntime.cancel() : Promise.resolve(stopCurrentVoicePlayback());
+    updateCoachUI("idle");
+    document.getElementById("btnIcon").innerText = "▶";
+    document.getElementById("btnText").innerText = "開始語音對話 (Start)";
+    document.getElementById("micNotice").innerHTML = "🎙️ 語音辨識已暫停";
+    try {
+        const result = await cancellation;
+        document.dispatchEvent(new CustomEvent("voice-runtime-cancelled", { detail: result || { cancelled: false } }));
+        return result;
+    } catch (error) {
+        const message = String(error?.message || error);
+        document.dispatchEvent(new CustomEvent("voice-runtime-cancel-failed", { detail: { message } }));
+        return { cancelled: false, error: message };
+    }
+}
+
+let mediaRecorder = null;
+let audioChunks = [];
+let isMediaRecording = false;
+
+function getSupportedRecordingMimeType() {
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+    return candidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
+}
+
+// MediaRecorder based Voice Recording (Bypasses Google Speech Service completely)
+async function startMediaRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        const mimeType = getSupportedRecordingMimeType();
+        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+        };
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || mimeType || "audio/webm" });
+            stream.getTracks().forEach(t => t.stop());
+            if (!isRunning) return;
+            if (audioBlob.size > 1000) {
+                await transcribeAudioBlob(audioBlob);
+            } else if (isRunning) {
+                updateCoachUI("idle");
+            }
+        };
+        mediaRecorder.start();
+        isMediaRecording = true;
+        updateCoachUI("listening");
+        document.getElementById("micNotice").innerHTML =
+            '<span style="color:#00B4D8;">🎙️ 錄音中... 講完後請點擊「完成說話」</span>';
+        document.getElementById("btnText").innerText = "完成說話 (Send Audio)";
+        document.getElementById("btnIcon").innerText = "✓";
+    } catch (e) {
+        console.error("MediaRecorder error:", e);
+        document.getElementById("micNotice").innerHTML =
+            '<span style="color:#EF4444;">❌ 麥克風啟動失敗，請允許麥克風權限或打字輸入。</span>';
+        stopConversation();
+    }
+}
+
+function stopMediaRecording() {
+    if (mediaRecorder && isMediaRecording) {
+        isMediaRecording = false;
+        mediaRecorder.stop();
+        updateCoachUI("thinking");
+        document.getElementById("micNotice").innerHTML = "🧠 正在處理您的聲音...";
+        document.getElementById("btnText").innerText = "開始語音對話 (Start)";
+        document.getElementById("btnIcon").innerText = "▶";
+    }
+}
+
+// --- Browser Whisper Speech Recognition (first use downloads and caches the pinned model) ---
+let browserModelManifestPromise = null;
+async function loadBrowserModelManifest() {
+    browserModelManifestPromise ||= fetch("./model-manifest.json", { cache: "no-cache" }).then(async response => {
+        if (!response.ok) throw new Error("MODEL_MANIFEST_UNAVAILABLE");
+        const manifest = await response.json();
+        if (manifest?.schemaVersion !== 1 || !manifest.models?.whisper || !manifest.models?.kokoro) {
+            throw new Error("INVALID_MODEL_MANIFEST");
+        }
+        for (const model of Object.values(manifest.models)) {
+            if (!/^[a-f0-9]{40}$/.test(model.revision || "")) throw new Error("INVALID_MODEL_REVISION");
+        }
+        return manifest;
+    });
+    return browserModelManifestPromise;
+}
+
+let offlineWhisperPipeline = null;
+let isWhisperLoading = false;
+let transformersModule = null;
+
+async function initOfflineWhisper() {
+    // Electron renderer must never execute remote CDN modules with preload privileges.
+    if (voiceRuntime?.kind === "electron") return;
+    if (offlineWhisperPipeline || isWhisperLoading) return;
+
+    isWhisperLoading = true;
+    try {
+        const manifest = await loadBrowserModelManifest();
+        const whisper = manifest.models.whisper;
+        transformersModule ||= await import("./vendor/transformers.bundle.js");
+        transformersModule.env.allowLocalModels = false;
+        transformersModule.env.allowRemoteModels = true;
+        transformersModule.env.useBrowserCache = true;
+
+        document.getElementById("micNotice").innerHTML =
+            '<span>⏳ 正在快取通用離線 Whisper 語音引擎 (~39MB)...</span>';
+
+        offlineWhisperPipeline = await transformersModule.pipeline(
+            "automatic-speech-recognition",
+            whisper.id,
+            {
+                revision: whisper.revision,
+                progress_callback: (p) => {
+                    if (p.status === 'progress') {
+                        document.getElementById("micNotice").innerHTML =
+                            `<span>⏳ 離線語音識別引擎下載中: ${Math.round(p.progress || 0)}%</span>`;
+                    }
+                }
+            }
+        );
+        document.getElementById("micNotice").innerHTML =
+            '<span style="color:#10B981;">✨ 跨平台離線 Whisper 語音引擎已就緒！</span>';
+    } catch (e) {
+        console.warn("Transformers.js Whisper init error:", e);
+    } finally {
+        isWhisperLoading = false;
+    }
+}
+
+async function transcribeWithWebAssembly(audioBlob) {
+    if (!offlineWhisperPipeline) await initOfflineWhisper();
+    if (!offlineWhisperPipeline) return null;
+
+    let audioContext = null;
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        const float32Data = audioBuffer.getChannelData(0);
+        // whisper-tiny.en is English-only; Transformers.js rejects language/task overrides for it.
+        const output = await offlineWhisperPipeline(float32Data);
+        return output?.text?.trim() || null;
+    } catch (e) {
+        console.warn("WebAssembly transcription error:", e);
+        return null;
+    } finally {
+        if (audioContext) await audioContext.close().catch(() => {});
+    }
+}
+
+// Browser STT is local-only. Audio must never be uploaded as a fallback.
+async function transcribeBrowserAudio({ audioBlob, language = "en" }) {
+    try {
+        const wasmText = await transcribeWithWebAssembly(audioBlob);
+        if (wasmText?.trim()) return { text: wasmText.trim(), language, backend: "browser-whisper" };
+    } catch (error) {
+        console.warn("Local Browser Whisper STT failed:", error);
+    }
+    const notice = document.getElementById("micNotice");
+    if (notice) notice.textContent = "⚠️ 本機 Whisper 無法辨識；錄音未上傳，請重試或使用文字輸入。";
+    return { text: "", language, backend: null, localUnavailable: true };
+}
+
+function isRuntimeCancellation(error) {
+    return /RUNTIME_(?:CANCELLED|DISPOSED)/.test(String(error?.message || error || ""));
+}
+
+async function transcribeAudioBlob(audioBlob) {
+    document.getElementById("micNotice").textContent = "🧠 正在即時辨識您的語音...";
+    try {
+        const runtime = voiceRuntime || await createVoiceRuntime();
+        const result = await runtime.transcribe({
+            audioBlob,
+            mimeType: audioBlob.type || "audio/webm",
+            language: "en"
+        });
+        if (result?.text?.trim()) {
+            const transcribed = result.text.trim();
+            appendChat("user", transcribed);
+            updateCoachUI("thinking");
+            await handleLLMResponse(transcribed);
+            return;
+        }
+    } catch (error) {
+        if (isRuntimeCancellation(error)) return;
+        console.warn("Voice runtime transcription failed:", error);
+    }
+
+    document.getElementById("micNotice").textContent = "💡 未辨識到聲音，請再說一次或直接在下方打字！";
+    updateCoachUI("idle");
+}
+
+async function transcribeAndroidLive() {
+    document.getElementById("micNotice").textContent = "🎙️ Android 本機語音辨識正在聆聽…";
+    updateCoachUI("listening");
+    try {
+        const result = await voiceRuntime.transcribe({ language: "en-US" });
+        if (!isRunning) return;
+        if (result?.text?.trim()) {
+            const transcribed = result.text.trim();
+            appendChat("user", transcribed);
+            updateCoachUI("thinking");
+            await handleLLMResponse(transcribed);
+            return;
+        }
+    } catch (error) {
+        if (isRuntimeCancellation(error)) return;
+        const notice = document.getElementById("micNotice");
+        if (notice && /MICROPHONE_PERMISSION_DENIED/.test(String(error?.message || error))) {
+            notice.textContent = error?.recovery === "OPEN_APP_SETTINGS"
+                ? "⚠️ 麥克風權限已永久拒絕；請到 Android 應用程式設定重新啟用。"
+                : "⚠️ 麥克風權限遭拒；再次開始即可重新授權，或使用文字輸入。";
+        } else if (notice) {
+            notice.textContent = "💡 Android 本機辨識不可用；錄音未送往雲端，請重試或使用文字輸入。";
+        }
+    }
+    updateCoachUI("idle");
+}
+
+async function startListeningTurn() {
+    if (!isRunning) return;
+    if (voiceRuntime?.kind === "android") {
+        const capabilities = await voiceRuntime.capabilities();
+        if (capabilities.selectedStt) return transcribeAndroidLive();
+    }
+    startMediaRecording();
+}
+
+async function sendManualText() {
+    const input = document.getElementById("userTextInput");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    appendChat("user", text);
+    updateCoachUI("thinking");
+    await handleLLMResponse(text);
+}
+
+async function handleLLMResponse(userText) {
+    const turnGeneration = ++llmTurnGeneration;
+    messages.push({ role: "user", content: userText });
+    const providerId = localStorage.getItem("vp_provider") || DIRECT_API_PROVIDER_ID;
+    const config = getProviderConfig(providerId);
+    const apiKey = getProviderApiKey(providerId);
+    const baseUrl = getProviderBaseUrl(providerId);
+    const model = getProviderModel(providerId);
+
+    let reply = "";
+    try {
+        if (!window.voiceNativeBridge?.providerOperation && !window.electronAPI?.providerOperation && config.kind === "api" && config.authMode === "required" && !apiKey) {
+            reply = getZeroKeyDemoReply(userText);
+        } else {
+            reply = await requestProviderChat({
+                providerId,
+                baseUrl,
+                apiKey,
+                model,
+                messages: messages,
+                conversationMessages: messages,
+                maxTokens: 300
+            });
+            if (turnGeneration !== llmTurnGeneration) return;
+            if (!window.VoiceLanguagePolicy.isEnglishOnlyReply(reply)) {
+                try {
+                    reply = await requestProviderChat({
+                        providerId,
+                        baseUrl,
+                        apiKey,
+                        model,
+                        messages: messages,
+                        conversationMessages: [
+                            ...messages,
+                            { role: "assistant", content: reply },
+                            { role: "user", content: window.VoiceLanguagePolicy.REPAIR_INSTRUCTION }
+                        ],
+                        maxTokens: 300
+                    });
+                    if (turnGeneration !== llmTurnGeneration) return;
+                } catch (repairError) {
+                    console.warn("English-only reply repair failed:", repairError);
+                    reply = window.VoiceLanguagePolicy.SAFE_ENGLISH_FALLBACK;
+                }
+            }
+            if (!window.VoiceLanguagePolicy.isEnglishOnlyReply(reply)) {
+                reply = window.VoiceLanguagePolicy.SAFE_ENGLISH_FALLBACK;
+            }
+        }
+    } catch (error) {
+        if (turnGeneration !== llmTurnGeneration || /APPLE_MODEL_CANCELLED/.test(String(error?.message || error || ""))) return;
+        console.error("LLM Request Error:", error);
+        reply = formatProviderError(error, config, baseUrl, model);
+    }
+
+    if (turnGeneration !== llmTurnGeneration) return;
+    messages.push({ role: "assistant", content: reply });
+    await speakReply(reply, () => appendChat("assistant", reply));
+}
+
+function getZeroKeyDemoReply(userText) {
+    const lower = userText.toLowerCase();
+    if (lower.includes("hello") || lower.includes("hi")) {
+        return "Hello! Nice to hear your voice! How is your day going so far?";
+    }
+    if (lower.includes("name")) {
+        return "Nice to meet you! Add an API key or sign in to a supported subscription account for full AI replies.";
+    }
+    if (lower.includes("how are you")) {
+        return "I'm doing great, thank you! What would you like to talk about today?";
+    }
+    return `That's interesting! You said: "${userText}". Connect an AI provider in settings for a full conversation.`;
+}
+
+function formatProviderError(error, config, baseUrl, model) {
+    const message = String(error?.message || error || "Unknown error");
+    if (message.includes("APPLE_MODEL_UNSUPPORTED_DEVICE")) {
+        return "這台裝置不支援 Apple Intelligence。請在設定中改選 OpenAI-compatible／LAN provider。";
+    }
+    if (message.includes("APPLE_INTELLIGENCE_DISABLED")) {
+        return "Apple Intelligence 尚未啟用。請在系統設定啟用並等待模型就緒，或改選 OpenAI-compatible provider。";
+    }
+    if (message.includes("APPLE_MODEL_NOT_READY")) {
+        return "Apple Intelligence 模型尚未就緒（可能仍在下載）。稍後重試，或改選 OpenAI-compatible provider。";
+    }
+    if (message.includes("APPLE_MODEL_UNSUPPORTED_LOCALE")) {
+        return "目前語言／地區不受 Foundation Models 支援。請調整系統語言，或改選 OpenAI-compatible provider。";
+    }
+    if (message.includes("APPLE_MODEL_PLATFORM_UNSUPPORTED") || message.includes("APPLE_MODEL_NATIVE_BRIDGE_REQUIRED")) {
+        return "Apple Intelligence provider 只可在支援的 iOS 原生 App 使用；未自動改送其他 provider。";
+    }
+    if (message.includes("APPLE_MODEL_SESSION_ERROR") || message.includes("APPLE_MODEL_EMPTY_RESPONSE") || message.includes("APPLE_MODEL_OUTPUT_TOO_LARGE")) {
+        return "Apple Intelligence 本機工作階段失敗。請重試，或由設定手動改選 OpenAI-compatible provider。";
+    }
+    if (message.includes("MODEL_REQUIRED")) {
+        return "MODEL_REQUIRED: Please enter a valid model name in settings before connecting.";
+    }
+
+    if (message.includes("API_KEY_REQUIRED") || message.includes("HTTP_401") || message.includes("HTTP_403")) {
+        return `Authentication failed for ${config.name}. Please check its API key in settings.`;
+    }
+    if (message.includes("HTTP_404")) {
+        return `Model "${model}" or the configured endpoint was not found. Please refresh the model list.`;
+    }
+    if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
+        return `Could not reach ${baseUrl}. Check the server, HTTPS/mixed-content policy, and CORS settings.`;
+    }
+    return `Could not connect to ${config.name}: ${message.substring(0, 160)}`;
+}
+
+// --- Kokoro-82M Neural TTS with explicit engine state and safe cancellation ---
+let kokoroTTSInstance = null;
+let isKokoroLoading = false;
+let kokoroWarmupPromise = null;
+let kokoroInitTimer = null;
+const kokoroModeEpoch = window.VoiceTtsPreference.createModeEpoch();
+let browserKokoroUsable = false;
+let currentAudioObj = null;
+let currentPlaybackResolve = null;
+let voicePlaybackToken = 0;
+
+function isKokoroInitializationCurrent(generation) {
+    return kokoroModeEpoch.isCurrent(generation)
+        && window.VoiceTtsPreference.shouldLoadBrowserKokoro({ mode: getTtsMode(), runtimeKind: voiceRuntime?.kind });
+}
+
+function cancelPendingKokoroInitialization({ releaseModel = false } = {}) {
+    kokoroModeEpoch.cancel();
+    if (kokoroInitTimer !== null) {
+        clearTimeout(kokoroInitTimer);
+        kokoroInitTimer = null;
+    }
+    kokoroWarmupPromise = null;
+    if (releaseModel) {
+        kokoroTTSInstance = null;
+        browserKokoroUsable = false;
+    }
+}
+
+function scheduleBrowserKokoroInitialization(delayMs = 0) {
+    cancelPendingKokoroInitialization();
+    const generation = kokoroModeEpoch.begin();
+    kokoroInitTimer = setTimeout(() => {
+        kokoroInitTimer = null;
+        initKokoroTTS(generation);
+    }, delayMs);
+}
+
+function logKokoroStep(msg) {
+    console.log(`[Kokoro] ${msg}`);
+    const el = document.getElementById("kokoroDebugLog");
+    if (el) {
+        el.style.display = "block";
+        el.textContent = `🔍 Kokoro 進度: ${msg}`;
+    }
+}
+
+async function initKokoroTTS(generation = kokoroModeEpoch.begin()) {
+    // Electron uses the trusted native sidecar; do not import remote renderer code.
+    if (window.electronAPI || (typeof voiceRuntime !== 'undefined' && voiceRuntime?.kind === 'electron')) {
+        console.log('[Kokoro] Running in Electron; renderer Kokoro is disabled.');
+        return null;
+    }
+    if (!isKokoroInitializationCurrent(generation)) return null;
+    if (kokoroTTSInstance) return kokoroTTSInstance;
+    if (isKokoroLoading) return null;
+    isKokoroLoading = true;
+    setTTSEngineStatus("Kokoro 下載中…", "#8338EC");
+    logKokoroStep("1/4 正在載入 kokoro-js 模組…");
+    try {
+        document.getElementById("micNotice").textContent = "⏳ 正在快取 Kokoro-82M 母語人聲引擎（首次使用需下載模型）…";
+        const manifest = await loadBrowserModelManifest();
+        const kokoro = manifest.models.kokoro;
+        const { KokoroTTS, configureKokoroRevision, phonemizeForKokoro } = await import("./vendor/kokoro.bundle.js");
+        configureKokoroRevision(kokoro.revision);
+        if (!isKokoroInitializationCurrent(generation)) return null;
+        if (typeof window !== "undefined" && window.caches && typeof window.caches.open === "function" && !window.__vp_caches_patched) {
+            window.__vp_caches_patched = true;
+            const rawCacheOpen = window.caches.open.bind(window.caches);
+            window.caches.open = function(name) {
+                return Promise.race([
+                    rawCacheOpen(name),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("CACHE_OPEN_TIMEOUT")), 1500))
+                ]);
+            };
+        }
+        // q8/WASM is the default on CPU. Advanced users may opt into WebGPU with localStorage.vp_kokoroDevice = "webgpu"
+        const preferWebGPU = localStorage.getItem("vp_kokoroDevice") === "webgpu" && navigator.gpu;
+        const kokoroDevice = preferWebGPU ? "webgpu" : "wasm";
+        const kokoroDtype = kokoroDevice === "webgpu" ? "fp32" : "q8";
+        logKokoroStep(`2/4 模組載入完成，正在下載/快取 ONNX 模型權重 (${kokoroDevice} ${kokoroDtype})…`);
+        const instance = await KokoroTTS.from_pretrained(kokoro.id, {
+            dtype: kokoroDtype,
+            device: kokoroDevice
+        });
+        if (!isKokoroInitializationCurrent(generation)) return null;
+        kokoroTTSInstance = instance;
+        logKokoroStep(`3.1/4 正在測試特徵檔連線 (${currentVoiceId}.bin)…`);
+        try {
+            const vUrl = `./voices/${currentVoiceId}.bin`;
+            const vRes = await fetch(vUrl, { cache: "force-cache" });
+            if (!vRes.ok) throw new Error("LOCAL_VOICE_ASSET_UNAVAILABLE");
+            const vBlob = await vRes.blob();
+            logKokoroStep(`3.2/4 特徵檔下載正常 (${Math.round(vBlob.size / 1024)} KB)！啟動拼音與 CPU 神經推論…`);
+        } catch (vErr) {
+            logKokoroStep(`3.2/4 特徵檔下載異常 (${vErr.message})，嘗試繼續…`);
+        }
+        setTTSEngineStatus(`Kokoro ${kokoroDevice.toUpperCase()}（暖機中）`, "#8338EC");
+        document.getElementById("micNotice").textContent = "✨ Kokoro 模型已載入，正在背景測速與暖機…";
+        const warmupStartedAt = performance.now();
+        const warmupInterval = setInterval(() => {
+            const sec = Math.round((performance.now() - warmupStartedAt) / 1000);
+            const noticeEl = document.getElementById("micNotice");
+            if (noticeEl && isKokoroLoading) {
+                noticeEl.textContent = `✨ Kokoro 正在背景推論與暖機（已耗時 ${sec} 秒，首次約需 30-50 秒）…`;
+            }
+        }, 1000);
+        const warmupTimeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("WARMUP_TIMEOUT")), 90000)
+        );
+        try {
+            logKokoroStep(`3.3/4 測試 Tokenizer 與神經網路 CPU forward pass…`);
+            const tokStart = performance.now();
+            const { input_ids: testInputIds } = instance.tokenizer("rˈɛdi", { truncation: true });
+            const Tensor = testInputIds.constructor;
+            const testStyle = new Tensor("float32", new Float32Array(256), [1, 256]);
+            const testSpeed = new Tensor("float32", [1.0], [1]);
+            logKokoroStep(`3.3/4 Tokenizer 耗時 ${Math.round(performance.now() - tokStart)}ms。正在執行 ONNX CPU forward pass…`);
+            const forwardStart = performance.now();
+            await instance.model({ input_ids: testInputIds, style: testStyle, speed: testSpeed });
+            const forwardMs = Math.round(performance.now() - forwardStart);
+            logKokoroStep(`3.4/4 神經網路 CPU forward pass 成功 (${forwardMs}ms)！封裝安全發音管道…`);
+            const voiceCache = new Map();
+            async function getVoiceFeatures(voiceId) {
+                if (!Object.prototype.hasOwnProperty.call(PERSONAS, voiceId)) {
+                    throw new Error("UNTRUSTED_LOCAL_VOICE_ID");
+                }
+                if (voiceCache.has(voiceId)) return voiceCache.get(voiceId);
+                const vUrl = `./voices/${voiceId}.bin`;
+                const vRes = await fetch(vUrl, { cache: "force-cache" });
+                if (!vRes.ok) throw new Error("LOCAL_VOICE_ASSET_UNAVAILABLE");
+                const vBuf = await vRes.arrayBuffer();
+                const vArr = new Float32Array(vBuf);
+                voiceCache.set(voiceId, vArr);
+                return vArr;
+            }
+            function float32ToWavBlob(float32Array, sampleRate = 24000) {
+                const buffer = new ArrayBuffer(44 + float32Array.length * 2);
+                const view = new DataView(buffer);
+                function writeStr(offset, str) {
+                    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+                }
+                writeStr(0, "RIFF");
+                view.setUint32(4, 36 + float32Array.length * 2, true);
+                writeStr(8, "WAVE");
+                writeStr(12, "fmt ");
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * 2, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                writeStr(36, "data");
+                view.setUint32(40, float32Array.length * 2, true);
+                let offset = 44;
+                for (let i = 0; i < float32Array.length; i++) {
+                    const s = Math.max(-1, Math.min(1, float32Array[i]));
+                    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                    offset += 2;
+                }
+                return new Blob([new Uint8Array(buffer)], { type: "audio/wav" });
+            }
+
+            async function directSynthesize(rawText, { voice = currentVoiceId, speed = 1.0 } = {}) {
+                const voiceFeats = await getVoiceFeatures(voice);
+                const phonemes = await phonemizeForKokoro(rawText || "Ready.", voice);
+                const { input_ids } = instance.tokenizer(phonemes, { truncation: true });
+                const Tensor = input_ids.constructor;
+                const seqLen = input_ids.dims.at(-1);
+                const Y = 256 * Math.min(Math.max(seqLen - 2, 0), 509);
+                const style = new Tensor("float32", voiceFeats.slice(Y, Y + 256), [1, 256]);
+                const speedTensor = new Tensor("float32", [speed], [1]);
+                const { waveform } = await instance.model({ input_ids, style, speed: speedTensor });
+                return {
+                    toBlob: () => float32ToWavBlob(waveform.data, 24000)
+                };
+            }
+
+            instance.generate = async function(text, { voice = currentVoiceId, speed = 1.0 } = {}) {
+                return await directSynthesize(text, { voice, speed });
+            };
+
+            logKokoroStep(`3.4/4 執行 "Ready." 暖機生成…`);
+            kokoroWarmupPromise = instance.generate("Ready.", { voice: currentVoiceId });
+            await kokoroWarmupPromise;
+        } finally {
+            clearInterval(warmupInterval);
+        }
+        if (!isKokoroInitializationCurrent(generation)) return null;
+        const warmupMs = performance.now() - warmupStartedAt;
+        const warmup = window.VoiceTtsPreference.classifySuccessfulKokoroWarmup(warmupMs);
+        browserKokoroUsable = warmup.usable;
+        const warmupSeconds = Math.round(warmup.elapsedMs / 1000);
+        logKokoroStep(`4/4 暖機推論完成！總耗時 ${warmupSeconds} 秒。`);
+        if (warmup.slow) {
+            setTTSEngineStatus(`Kokoro ${kokoroDevice.toUpperCase()}（已就緒；首次暖機 ${warmupSeconds} 秒）`, "#F59E0B");
+            document.getElementById("micNotice").textContent = `✨ Kokoro 已成功就緒；首次暖機較久（${warmupSeconds} 秒），後續仍會使用 Kokoro。`;
+        } else {
+            setTTSEngineStatus(`Kokoro ${kokoroDevice.toUpperCase()}`, "#10B981");
+            document.getElementById("micNotice").textContent = `✨ Kokoro 神經人聲已就緒（暖機 ${warmupSeconds} 秒）！`;
+        }
+        return kokoroTTSInstance;
+    } catch (e) {
+        if (isKokoroInitializationCurrent(generation)) {
+            console.warn("Kokoro-JS load fallback:", e);
+            const errSummary = e?.message || String(e);
+            logKokoroStep(`中斷/失敗: ${errSummary}`);
+            const failureLabel = e?.message === "WARMUP_TIMEOUT"
+                ? "系統語音（Kokoro 暖機逾時）"
+                : "系統語音（Kokoro 無法載入）";
+            setTTSEngineStatus(failureLabel, "#F59E0B");
+            document.getElementById("micNotice").textContent = e?.message === "WARMUP_TIMEOUT"
+                ? "💡 瀏覽器推論逾時（>90秒），已自動切換為系統語音。"
+                : `💡 Kokoro 載入失敗 (${errSummary})，已切換為系統語音。`;
+        }
+        return null;
+    } finally {
+        isKokoroLoading = false;
+        const generationIsCurrent = kokoroModeEpoch.isCurrent(generation);
+        if (generationIsCurrent) kokoroWarmupPromise = null;
+        const wantsBrowserKokoro = window.VoiceTtsPreference.shouldLoadBrowserKokoro({
+            mode: getTtsMode(),
+            runtimeKind: voiceRuntime?.kind
+        });
+        if (window.VoiceTtsPreference.shouldRetryKokoroInitialization({
+            generationIsCurrent,
+            wantsBrowserKokoro,
+            timerPending: kokoroInitTimer !== null,
+            instanceReady: Boolean(kokoroTTSInstance)
+        })) {
+            scheduleBrowserKokoroInitialization();
+        }
+    }
+}
+
+function stopCurrentVoicePlayback() {
+    voicePlaybackToken++;
+    if (currentAudioObj) {
+        try {
+            currentAudioObj.pause();
+            currentAudioObj.removeAttribute("src");
+            currentAudioObj.load();
+        } catch(e) {}
+        currentAudioObj = null;
+    }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+        try { window.speechSynthesis.cancel(); } catch(e) {}
+    }
+    if (currentPlaybackResolve) {
+        currentPlaybackResolve(false);
+        currentPlaybackResolve = null;
+    }
+}
+
+function cleanTextForTTS(text) {
+    if (!text) return "";
+    const displayCleaned = text
+        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{E000}-\u{F8FF}\u{FE00}-\u{FE0F}]/gu, "")
+        .replace(/\*[^*]*\*/g, "")
+        .replace(/\[[^\]]*\]/g, "")
+        .replace(/[#*_~`^>]/g, "")
+        .replace(/\.{2,}/g, ", ")
+        .replace(/\s+/g, " ")
+        .trim();
+    return window.VoiceLanguagePolicy.sanitizeEnglishSpeechText(displayCleaned);
+}
+
+function playAudioSource(src, token, onStartCallback, cleanup = null) {
+    return new Promise(resolve => {
+        let settled = false;
+        let audio = null;
+        const finish = result => {
+            if (settled) return;
+            settled = true;
+            if (cleanup) cleanup();
+            if (currentPlaybackResolve === cancel) currentPlaybackResolve = null;
+            if (currentAudioObj === audio) currentAudioObj = null;
+            resolve(result);
+        };
+        const cancel = () => finish(false);
+        currentPlaybackResolve = cancel;
+        audio = new Audio(src);
+        currentAudioObj = audio;
+        audio.onplay = () => {
+            if (token !== voicePlaybackToken) return cancel();
+            if (typeof onStartCallback === "function") onStartCallback();
+            updateCoachUI("speaking");
+        };
+        audio.onended = () => finish(true);
+        audio.onerror = error => {
+            logKokoroStep(`音訊播放器錯誤: ${audio.error?.code || error}`);
+            console.warn("Audio playback error:", error);
+            finish(false);
+        };
+        audio.play().catch(error => {
+            logKokoroStep(`音訊 play() 被拒絕: ${error?.message || error}`);
+            console.warn("Audio play() rejected:", error);
+            finish(false);
+        });
+    });
+}
+
+function playFallbackWebSpeech(cleanText, token, onStartCallback, statusLabel = "系統語音") {
+    return new Promise(resolve => {
+        if (!window.speechSynthesis || token !== voicePlaybackToken) return resolve(false);
+        let settled = false;
+        const utter = new SpeechSynthesisUtterance(cleanText);
+        const finish = result => {
+            if (settled) return;
+            settled = true;
+            if (currentPlaybackResolve === cancel) currentPlaybackResolve = null;
+            resolve(result);
+        };
+        const cancel = () => finish(false);
+        const config = PERSONA_VOICE_CONFIG[currentVoiceId] || PERSONA_VOICE_CONFIG.af_heart;
+        const selectedVoice = findBestVoiceForPersona(currentVoiceId);
+        if (!selectedVoice) {
+            setTTSEngineStatus("沒有已確認的本機系統語音；請下載系統聲音或選用 Kokoro", "#EF4444");
+            return resolve(false);
+        }
+        utter.voice = selectedVoice;
+        utter.pitch = config.pitch || 1.0;
+        utter.rate = config.rate || 1.0;
+        utter.lang = selectedVoice?.lang || "en-US";
+        utter.onstart = () => {
+            if (token !== voicePlaybackToken) return cancel();
+            const engineLabel = selectedVoice ? `${statusLabel}：${selectedVoice.name}` : statusLabel;
+            setTTSEngineStatus(engineLabel, "#F59E0B");
+            if (typeof onStartCallback === "function") onStartCallback();
+            updateCoachUI("speaking");
+        };
+        utter.onend = () => finish(true);
+        utter.onerror = error => {
+            console.warn("Web Speech utterance error:", error);
+            finish(false);
+        };
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
+        currentPlaybackResolve = cancel;
+        window.speechSynthesis.speak(utter);
+    });
+}
+
+async function synthesizeBrowserSpeech({ text, voice = "af_heart" }) {
+    if (voiceRuntime?.kind === "electron") {
+        return { useSystemSpeech: true, backend: "system-speech" };
+    }
+    if (browserKokoroUsable && kokoroTTSInstance) {
+        try {
+            logKokoroStep(`教練開始合成: "${text.slice(0, 30)}…"`);
+            const audio = await kokoroTTSInstance.generate(text, { voice });
+            const blob = audio.toBlob();
+            logKokoroStep(`教練語音合成成功 (${Math.round(blob.size / 1024)} KB)！準備播放…`);
+            return { blob, backend: "browser-kokoro" };
+        } catch (error) {
+            logKokoroStep(`教練合成失敗: ${error?.name || 'Error'}: ${error?.message || error}`);
+            console.warn("Browser Kokoro synthesis failed, using system voice:", error);
+        }
+    } else {
+        logKokoroStep(`Kokoro 尚未就緒: usable=${browserKokoroUsable}, instance=${Boolean(kokoroTTSInstance)}`);
+    }
+    if (!kokoroTTSInstance && !isKokoroLoading) initKokoroTTS();
+    return { useSystemSpeech: true, backend: "system-speech" };
+}
+
+async function speakReply(text, onStartCallback = null) {
+    if (voiceRuntime) voiceRuntime.cancel();
+    else stopCurrentVoicePlayback();
+    const token = voicePlaybackToken;
+    const cleanText = cleanTextForTTS(text) || window.VoiceLanguagePolicy.SAFE_ENGLISH_FALLBACK;
+    let callbackCalled = false;
+    const triggerStart = () => {
+        if (callbackCalled) return;
+        callbackCalled = true;
+        if (typeof onStartCallback === "function") onStartCallback();
+    };
+    setTimeout(() => {
+        if (token === voicePlaybackToken) triggerStart();
+    }, 400);
+
+    updateCoachUI("thinking");
+    let played = false;
+    const runtime = voiceRuntime || await createVoiceRuntime();
+    const ttsMode = getTtsMode();
+    const useModelTts = window.VoiceTtsPreference.shouldUseModelTts({ mode: ttsMode, runtimeKind: runtime.kind });
+
+    if (useModelTts) {
+        try {
+            setTTSEngineStatus(runtime.kind === "android" ? "Android 本機語音播放中…" : (runtime.kind === "electron" ? "Native TTS 生成中…" : "Kokoro 生成中…"), "#8338EC");
+            const result = await runtime.synthesize({ text: cleanText, voice: currentVoiceId, speed: 1.0 });
+            if (token !== voicePlaybackToken) return false;
+            if (result?.audio) {
+                const ep = result.executionProvider;
+                const engineName = ep === "DmlExecutionProvider"
+                    ? "Kokoro Native DirectML"
+                    : (ep === "CPUExecutionProvider" ? "Kokoro Native CPU" : "Kokoro Native");
+                setTTSEngineStatus(engineName, "#10B981");
+                played = await playAudioSource(`data:${result.format || "audio/wav"};base64,${result.audio}`, token, triggerStart);
+            } else if (result?.blob) {
+                logKokoroStep(`取得音訊 Blob，呼叫 playAudioSource 播放…`);
+                const url = URL.createObjectURL(result.blob);
+                setTTSEngineStatus("Kokoro 神經語音", "#10B981");
+                played = await playAudioSource(url, token, triggerStart, () => URL.revokeObjectURL(url));
+                logKokoroStep(`playAudioSource 結果: ${played ? '播放成功' : '播放失敗或被取消'}`);
+            } else if (result?.playback === "direct" && result?.completed === true) {
+                setTTSEngineStatus("Android 本機系統語音", "#10B981");
+                triggerStart();
+                played = true;
+            }
+        } catch (error) {
+            console.warn("Voice runtime synthesis failed, using system voice:", error);
+        }
+    }
+
+    if (!played && token === voicePlaybackToken) {
+        let fallbackLabel = "系統語音";
+        if (useModelTts) {
+            if (runtime.kind === "electron") fallbackLabel = "System Voice (native unavailable)";
+            else fallbackLabel = isKokoroLoading ? "系統語音（Kokoro 準備中）" : "系統語音（Kokoro 不可用）";
+        } else {
+            fallbackLabel = (ttsMode === "system" ? "系統語音（使用者選擇）" : "系統語音（Auto）");
+        }
+        setTTSEngineStatus(fallbackLabel, "#F59E0B");
+        played = await playFallbackWebSpeech(cleanText, token, triggerStart, fallbackLabel);
+    }
+
+    if (token === voicePlaybackToken) {
+        triggerStart();
+        if (isRunning) startListeningTurn();
+        else updateCoachUI("idle");
+    }
+    return played;
+}
+
+function appendChat(role, text) {
+    const box = document.getElementById("chatBox");
+    const p = PERSONAS[currentVoiceId];
+    const div = document.createElement("div");
+    div.className = `chat-msg ${role}`;
+    const avatarEl = document.createElement("div");
+    avatarEl.className = "msg-avatar";
+    avatarEl.textContent = role === "user" ? "👤" : p.emoji;
+    const bubbleEl = document.createElement("div");
+    bubbleEl.className = "msg-bubble";
+    bubbleEl.textContent = String(text ?? "");
+    div.append(avatarEl, bubbleEl);
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+
+// Shadowing Coach
+function evaluateShadowingTranscript(target, spoken) {
+    const targetWords = String(target || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const spokenWords = String(spoken || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = targetWords.map(word => spokenWords.includes(word.replace(/[.,!?]/g, "")));
+    const matches = hits.filter(Boolean).length;
+    return {
+        score: targetWords.length ? Math.round((matches / targetWords.length) * 100) : 0,
+        targetWords,
+        hits
+    };
+}
+
+function renderShadowingResult(resultBox, target, spoken) {
+    const assessment = evaluateShadowingTranscript(target, spoken);
+    const summary = document.createElement("div");
+    summary.style.fontWeight = "800";
+    summary.style.marginBottom = "6px";
+    summary.textContent = `發音匹配評分: ${assessment.score}%`;
+
+    const spokenLine = document.createElement("div");
+    spokenLine.style.fontSize = "12px";
+    spokenLine.style.color = "#64748B";
+    spokenLine.textContent = `你說的: "${spoken}"`;
+
+    const chips = document.createElement("div");
+    chips.className = "word-chips";
+    assessment.targetWords.forEach((word, index) => {
+        const hit = assessment.hits[index];
+        const chip = document.createElement("span");
+        chip.className = "word-chip";
+        chip.style.background = hit ? "#D1FAE5" : "#FEE2E2";
+        chip.style.color = hit ? "#065F46" : "#991B1B";
+        chip.textContent = word;
+        chips.appendChild(chip);
+    });
+    resultBox.replaceChildren(summary, spokenLine, chips);
+    return assessment;
+}
+
+async function startShadowing() {
+    const lastAssistantMsg = [...messages].reverse().find(m => m.role === "assistant");
+    if (!lastAssistantMsg) {
+        alert("請先開始對話後再跟讀練習唷！");
+        return;
+    }
+    const resultBox = document.getElementById("shadowResultBox");
+    resultBox.style.display = "block";
+    resultBox.replaceChildren();
+    resultBox.textContent = "🎙️ 請跟讀（本機錄音 5 秒）...";
+
+    let stream = null;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const chunks = [];
+        const mimeType = getSupportedRecordingMimeType();
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        const audioBlobPromise = new Promise((resolve, reject) => {
+            recorder.ondataavailable = event => {
+                if (event.data.size > 0) chunks.push(event.data);
+            };
+            recorder.onerror = event => reject(event.error || new Error("SHADOW_RECORDING_FAILED"));
+            recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" }));
+        });
+        recorder.start();
+        setTimeout(() => {
+            if (recorder.state === "recording") recorder.stop();
+        }, 5000);
+        const audioBlob = await audioBlobPromise;
+        resultBox.textContent = "🧠 正在使用本機 Whisper 評分...";
+        const spoken = String(await transcribeWithWebAssembly(audioBlob) || "");
+        if (!spoken) throw new Error("NO_LOCAL_TRANSCRIPT");
+        renderShadowingResult(resultBox, lastAssistantMsg.content, spoken);
+    } catch (error) {
+        console.warn("Local shadowing assessment failed:", error);
+        resultBox.textContent = "💡 本機語音評分失敗，請確認麥克風權限與 Whisper 模型。";
+    } finally {
+        stream?.getTracks().forEach(track => track.stop());
+    }
+}
+
+// Local-first lesson library management
+function updateLessonCount() {
+    document.getElementById("lessonCount").textContent = String(lessons.length);
+}
+
+function setLessonManagerResult(message, isError = false) {
+    const result = document.getElementById("lessonManagerResult");
+    result.style.display = "block";
+    result.style.color = isError ? "#DC2626" : "#047857";
+    result.textContent = message;
+}
+
+function pruneLessonProgress() {
+    let completed = [];
+    try {
+        const stored = JSON.parse(localStorage.getItem("vp_completed_lessons") || "[]");
+        if (Array.isArray(stored)) completed = stored;
+    } catch (_) {
+        // Malformed progress is reset below.
+    }
+    const validIds = new Set(lessons.map(lesson => lesson.id));
+    localStorage.setItem("vp_completed_lessons", JSON.stringify(completed.filter(id => validIds.has(id))));
+}
+
+function openLessonManager() {
+    document.getElementById("lessonJsonEditor").value = window.VoiceLessonLibrary.exportLessons(lessons);
+    document.getElementById("lessonManagerResult").style.display = "none";
+    document.getElementById("lessonManagerModal").style.display = "flex";
+}
+
+function closeLessonManager() {
+    document.getElementById("lessonManagerModal").style.display = "none";
+}
+
+function applyLessonLibrary(nextLessons, message) {
+    lessons = window.VoiceLessonLibrary.saveLessons(localStorage, nextLessons);
+    pruneLessonProgress();
+    updateLessonCount();
+    renderLessonList();
+    document.getElementById("lessonJsonEditor").value = window.VoiceLessonLibrary.exportLessons(lessons);
+    setLessonManagerResult(message);
+}
+
+function saveLessonEditor() {
+    try {
+        const parsed = window.VoiceLessonLibrary.parseLessonImport(document.getElementById("lessonJsonEditor").value);
+        applyLessonLibrary(parsed, `✅ 已儲存 ${parsed.length} 課至此裝置。`);
+    } catch (error) {
+        setLessonManagerResult(`❌ 無法儲存：${error.message}`, true);
+    }
+}
+
+async function importLessonFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > window.VoiceLessonLibrary.MAX_IMPORT_BYTES) {
+        setLessonManagerResult("❌ 匯入檔案不可超過 1 MB。", true);
+        return;
+    }
+    try {
+        const imported = window.VoiceLessonLibrary.parseLessonImport(await file.text());
+        const mode = document.getElementById("lessonImportMode").value;
+        const merged = window.VoiceLessonLibrary.mergeLessons(lessons, imported, mode);
+        applyLessonLibrary(merged, `✅ 已${mode === "replace" ? "取代" : "合併"}課程庫，目前共 ${merged.length} 課。`);
+    } catch (error) {
+        setLessonManagerResult(`❌ 匯入失敗：${error.message}`, true);
+    }
+}
+
+function exportLessonLibrary() {
+    const blob = new Blob([window.VoiceLessonLibrary.exportLessons(lessons)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `voice-practice-lessons-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setLessonManagerResult(`✅ 已匯出 ${lessons.length} 課。`);
+}
+
+function restoreDefaultLessons() {
+    if (!confirm("確定恢復內建範例課程？目前自訂課程會被取代，請先匯出備份。")) return;
+    localStorage.removeItem("vp_completed_lessons");
+    applyLessonLibrary(DEFAULT_LESSONS, `✅ 已恢復 ${DEFAULT_LESSONS.length} 課內建範例。`);
+}
+
+updateLessonCount();
+
+// Lessons System
+function renderLessonList() {
+    const completed = JSON.parse(localStorage.getItem("vp_completed_lessons") || "[]");
+    const container = document.getElementById("lessonListContainer");
+    document.getElementById("lessonCount").textContent = String(lessons.length);
+    let currentFound = false;
+
+    container.innerHTML = lessons.map((les, idx) => {
+        const isDone = completed.includes(les.id);
+        let status = "locked";
+        let badge = '<span class="lesson-badge" style="background:#F1F5F9; color:#94A3B8;">🔒 未解鎖</span>';
+
+        if (isDone) {
+            status = "done";
+            badge = '<span class="lesson-badge" style="background:#D1FAE5; color:#065F46;">✅ 已完成</span>';
+        } else if (!currentFound) {
+            status = "current";
+            currentFound = true;
+            badge = '<span class="lesson-badge" style="background:#FEF3C7; color:#92400E;">▶️ 進行中</span>';
+        }
+
+        const isClickable = status !== "locked";
+        return `
+        <div class="lesson-item ${status === 'current' ? 'active' : ''} ${status === 'locked' ? 'locked' : ''}"
+             onclick="${isClickable ? `startSpecificLesson('${les.id}')` : ''}">
+            <div>
+                <div style="font-weight: 800; font-size: 14px;">${idx + 1}. ${window.VoiceLessonLibrary.escapeHtml(les.title)}</div>
+                <div style="font-size: 11px; color: #64748B;">🌱 ${window.VoiceLessonLibrary.escapeHtml(les.level)}</div>
+            </div>
+            <div>${badge}</div>
+        </div>`;
+    }).join("");
+}
+
+async function startSpecificLesson(lessonId) {
+    const lesson = lessons.find(l => l.id === lessonId);
+    if (!lesson) return;
+    if (isRunning) stopConversation();
+    currentMode = "lesson";
+    currentLessonId = lessonId;
+    document.getElementById("currentLessonTitle").textContent = lesson.title;
+    switchTab("lesson-practice");
+
+    messages = [
+        { role: "system", content: `${ENGLISH_COACH_SYSTEM_PROMPT} You are currently teaching this lesson: ${lesson.title}. Objectives: ${lesson.objectives.join("; ")}. Guide the student naturally toward these objectives.` },
+        { role: "assistant", content: lesson.opening_line }
+    ];
+
+    document.getElementById("chatBox").replaceChildren();
+    appendChat("assistant", lesson.opening_line);
+    isRunning = false;
+    await speakReply(lesson.opening_line);
+    isRunning = true;
+    document.getElementById("btnIcon").textContent = "⏹";
+    document.getElementById("btnText").textContent = "停止對話 (Stop)";
+    startListeningTurn();
+}
+
+// Tabs
+function switchTab(tab) {
+    const isLessonPractice = tab === "lesson-practice";
+    document.getElementById("tabBtnFree").classList.toggle("active", tab === "free");
+    document.getElementById("tabBtnLesson").classList.toggle("active", tab === "lesson" || isLessonPractice);
+    document.getElementById("sectionFreeChat").style.display = tab === "free" || isLessonPractice ? "block" : "none";
+    document.getElementById("sectionLesson").style.display = tab === "lesson" ? "block" : "none";
+    document.getElementById("lessonPracticeBanner").style.display = isLessonPractice ? "flex" : "none";
+    if (tab === "free") {
+        currentMode = "free";
+        currentLessonId = null;
+    }
+    if (tab === "lesson") renderLessonList();
+}
+
+function completeCurrentLesson() {
+    if (!currentLessonId) return;
+    let completed = [];
+    try {
+        const stored = JSON.parse(localStorage.getItem("vp_completed_lessons") || "[]");
+        if (Array.isArray(stored)) completed = stored;
+    } catch (error) {
+        console.warn("Ignoring malformed lesson progress:", error);
+    }
+    if (!completed.includes(currentLessonId)) completed.push(currentLessonId);
+    localStorage.setItem("vp_completed_lessons", JSON.stringify(completed));
+    if (isRunning) stopConversation();
+    currentMode = "free";
+    currentLessonId = null;
+    switchTab("lesson");
+}
+
+function returnToLessonList() {
+    if (isRunning) stopConversation();
+    currentMode = "free";
+    currentLessonId = null;
+    switchTab("lesson");
+}
+
+// Coach Modal
+function openCoachModal() {
+    const grid = document.getElementById("coachGrid");
+    grid.innerHTML = Object.values(PERSONAS).map(p => `
+        <div class="coach-choice-item ${p.id === currentVoiceId ? 'active' : ''}" onclick="selectCoach('${p.id}')">
+            <div style="font-size: 28px; margin-bottom: 4px;">${p.emoji}</div>
+            <div style="font-weight: 800; font-size: 13px;">${p.name}</div>
+            <div style="font-size: 11px; color: #64748B;">${p.title}</div>
+        </div>
+    `).join("");
+    document.getElementById("coachModal").style.display = "flex";
+}
+function selectCoach(vid) {
+    if (voiceRuntime) voiceRuntime.cancel();
+    else stopCurrentVoicePlayback();
+    currentVoiceId = vid;
+    updateCoachUI("idle");
+    closeCoachModal();
+
+    const greetings = {
+        af_heart: "Hi! I am Heart. I'm so excited to practice English with you!",
+        af_bella: "Hey there! I am Bella! Let's have some fun speaking English!",
+        af_nicole: "Hello, I am Nicole. Take your time, we will learn step by step.",
+        af_sky: "Hey! I am Sky. Let's chat like good friends!",
+        am_adam: "Good to see you. I am Adam, ready for our conversation.",
+        am_michael: "What's up! I am Michael. Let's make English practice super easy and fun!",
+        am_onyx: "Greetings. I am Onyx. Let us begin our session.",
+        am_fenrir: "Hey! I am Fenrir! Let's conquer English speaking together!"
+    };
+
+    speakReply(greetings[vid] || "Hello, I am your new coach!");
+}
+function closeCoachModal() { document.getElementById("coachModal").style.display = "none"; }
+
+// Connection adapters: direct API, provider-specific web OAuth, and subscription bridges.
+const DIRECT_API_PROVIDER_ID = "openai-compatible";
+const APPLE_FOUNDATION_MODEL_PROVIDER_ID = "apple-foundation-models";
+const LLM_PROVIDER_IDS = window.VoiceLlmProviderContract.PROVIDER_IDS;
+const DESKTOP_PROVIDER_PROFILES = Object.freeze({
+    "https://api.anthropic.com/v1": "claude",
+    "https://api.openai.com/v1": "openai",
+    "https://generativelanguage.googleapis.com/v1beta/openai": "gemini",
+    "https://api.groq.com/openai/v1": "groq",
+    "https://api.deepseek.com/v1": "deepseek",
+    "http://localhost:8000/v1": "omlx",
+    "http://127.0.0.1:8000/v1": "omlx",
+    "http://localhost:8080/v1": "llamacpp",
+    "http://127.0.0.1:8080/v1": "llamacpp",
+    "http://localhost:11434/v1": "ollama",
+    "http://127.0.0.1:11434/v1": "ollama",
+    "http://localhost:8080/v1": "llamacpp",
+    "http://127.0.0.1:8080/v1": "llamacpp",
+    "http://localhost:1234/v1": "lmstudio",
+    "http://127.0.0.1:1234/v1": "lmstudio"
+});
+const DESKTOP_SECRET_PROFILES = new Set(["claude", "openai", "gemini", "groq", "deepseek"]);
+
+function normalizeApiBaseUrl(value) {
+    return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function normalizeCredentialBaseUrl(value) {
+    const normalized = normalizeApiBaseUrl(value);
+    try {
+        const parsed = new URL(normalized);
+        parsed.hash = "";
+        return parsed.href.replace(/\/+$/, "");
+    } catch {
+        return normalized;
+    }
+}
+
+function desktopProviderProfile(providerId, baseUrl) {
+    if (!window.electronAPI?.providerOperation && !window.electronAPI?.providerCredentialSet) return providerId;
+    if (providerId !== DIRECT_API_PROVIDER_ID) return providerId;
+    const profile = DESKTOP_PROVIDER_PROFILES[normalizeApiBaseUrl(baseUrl)];
+    if (!profile) throw new Error("DESKTOP_ENDPOINT_NOT_ALLOWED");
+    return profile;
+}
+
+const PROVIDERS_CONFIG = Object.freeze({
+    "apple-foundation-models": {
+        name: "Apple Intelligence（本機）", kind: "native", protocol: "foundation-models", authMode: "none",
+        baseUrl: "", defaultModels: []
+    },
+    [LLM_PROVIDER_IDS.OPENAI_COMPATIBLE]: window.VoiceLlmProviderContract.getProviderDefinition(LLM_PROVIDER_IDS.OPENAI_COMPATIBLE),
+    [LLM_PROVIDER_IDS.CHATGPT_SUBSCRIPTION]: window.VoiceLlmProviderContract.getProviderDefinition(LLM_PROVIDER_IDS.CHATGPT_SUBSCRIPTION),
+    [LLM_PROVIDER_IDS.GROK_SUBSCRIPTION]: window.VoiceLlmProviderContract.getProviderDefinition(LLM_PROVIDER_IDS.GROK_SUBSCRIPTION)
+});
+
+function appleAvailabilityMessage(code) {
+    const messages = {
+        APPLE_MODEL_AVAILABLE: "✅ Apple Intelligence 本機模型已就緒。Foundation Models 只處理 LLM；STT／TTS 設定不變。",
+        APPLE_MODEL_UNSUPPORTED_DEVICE: "此裝置不支援 Apple Intelligence；請改選 OpenAI-compatible／LAN provider。",
+        APPLE_INTELLIGENCE_DISABLED: "Apple Intelligence 尚未啟用；請至系統設定啟用，或請改選 OpenAI-compatible provider。",
+        APPLE_MODEL_NOT_READY: "Apple Intelligence 模型尚未就緒；請等待系統下載完成，或請改選 OpenAI-compatible provider。",
+        APPLE_MODEL_UNSUPPORTED_LOCALE: "目前語言／地區不受支援；請調整系統語言，或請改選 OpenAI-compatible provider。",
+        APPLE_MODEL_PLATFORM_UNSUPPORTED: "目前 OS／平台不支援 Foundation Models；請改選 OpenAI-compatible provider。",
+        APPLE_MODEL_NATIVE_BRIDGE_REQUIRED: "Apple Intelligence provider 只可在支援的 iOS 原生 App 使用；不會自動改送其他 provider。"
+    };
+    return messages[code] || "Apple Intelligence 狀態未知；不會自動改送其他 provider，請改選 OpenAI-compatible provider。";
+}
+
+function configureAppleFoundationModelProviderOption() {
+    const nativeAppleAvailable = window.voiceNativeBridge?.appleFoundationModels === true;
+    const appleOption = document.getElementById("appleIntelligenceProviderOption");
+    const appleGroup = document.getElementById("nativeAppleProviderGroup");
+    appleOption.hidden = !nativeAppleAvailable;
+    appleOption.disabled = !nativeAppleAvailable;
+    appleGroup.hidden = !nativeAppleAvailable;
+    const status = document.getElementById("appleIntelligenceStatus");
+    if (!nativeAppleAvailable) {
+        status.style.display = "block";
+        status.textContent = appleAvailabilityMessage("APPLE_MODEL_NATIVE_BRIDGE_REQUIRED");
+    }
+    return nativeAppleAvailable;
+}
+
+async function refreshAppleFoundationModelAvailability() {
+    const status = document.getElementById("appleIntelligenceStatus");
+    status.style.display = "block";
+    status.textContent = "正在檢查 Apple Intelligence availability…";
+    if (window.voiceNativeBridge?.appleFoundationModels !== true || !window.voiceNativeBridge?.providerOperation) {
+        status.textContent = appleAvailabilityMessage("APPLE_MODEL_NATIVE_BRIDGE_REQUIRED");
+        return { available: false, availability: "APPLE_MODEL_NATIVE_BRIDGE_REQUIRED" };
+    }
+    try {
+        const result = await window.voiceNativeBridge.providerOperation({
+            operation: "apple.status",
+            providerId: APPLE_FOUNDATION_MODEL_PROVIDER_ID,
+            locale: String(globalThis.navigator?.language || "en-US").slice(0, 64)
+        });
+        status.textContent = appleAvailabilityMessage(result?.availability);
+        status.style.color = result?.available ? "#047857" : "#B45309";
+        return result;
+    } catch (_) {
+        status.textContent = "無法檢查 Apple Intelligence；不會自動 fallback，請改選 OpenAI-compatible provider。";
+        status.style.color = "#B45309";
+        return { available: false, availability: "APPLE_MODEL_STATUS_ERROR" };
+    }
+}
+
+let modelDebounceTimer = null;
+let activeSettingsProvider = null;
+let modelDiscoveryEpoch = 0;
+let modelDiscoveryController = null;
+let modelDiscoveryLoadingEpoch = null;
+let subscriptionProviderCapabilities = [];
+let subscriptionLoginState = null;
+
+function getProviderConfig(providerId) {
+    return PROVIDERS_CONFIG[providerId] || PROVIDERS_CONFIG[DIRECT_API_PROVIDER_ID];
+}
+
+function isSubscriptionProvider(providerId) {
+    return providerId === LLM_PROVIDER_IDS.CHATGPT_SUBSCRIPTION
+        || providerId === LLM_PROVIDER_IDS.GROK_SUBSCRIPTION;
+}
+
+function hasDesktopProviderBroker() {
+    return typeof window.electronAPI?.providerOperation === "function";
+}
+
+function hasDesktopSubscriptionBroker() {
+    return [
+        "subscriptionCapabilities", "subscriptionBeginLogin", "subscriptionPollLogin", "subscriptionCancelLogin",
+        "subscriptionStatus", "subscriptionLogout", "subscriptionOperation"
+    ].every(name => typeof window.electronAPI?.[name] === "function");
+}
+
+function hasPrivilegedLlmBridge() {
+    return hasDesktopProviderBroker()
+        || hasDesktopSubscriptionBroker()
+        || typeof window.electronAPI?.providerCredentialSet === "function"
+        || typeof window.electronAPI?.providerCredentialHas === "function"
+        || typeof window.electronAPI?.providerCredentialClear === "function";
+}
+
+function currentLlmProductPlatform() {
+    if (window.voiceNativeBridge) {
+        return window.voiceNativeBridge.appleFoundationModels === true ? "ios" : "android";
+    }
+    return hasPrivilegedLlmBridge() ? "desktop" : "browser";
+}
+
+function getCurrentProviderState(providerId) {
+    const nativeProviderOperation = typeof window.voiceNativeBridge?.providerOperation === "function";
+    const platformLocalProviders = window.voiceNativeBridge?.appleFoundationModels === true
+        ? [LLM_PROVIDER_IDS.APPLE_FOUNDATION_MODELS] : [];
+    const state = window.VoiceLlmProviderContract.getProviderState(providerId, {
+        platform: currentLlmProductPlatform(),
+        subscriptionProviders: subscriptionProviderCapabilities,
+        availableProviders: nativeProviderOperation ? [LLM_PROVIDER_IDS.OPENAI_COMPATIBLE] : [],
+        platformLocalProviders
+    });
+    const states = window.VoiceLlmProviderContract.PROVIDER_STATES;
+    if (providerId === DIRECT_API_PROVIDER_ID && hasPrivilegedLlmBridge() && !hasDesktopProviderBroker()) {
+        return states.UNAVAILABLE;
+    }
+    return state;
+}
+
+function isSelectableProviderState(state) {
+    const states = window.VoiceLlmProviderContract.PROVIDER_STATES;
+    return state === states.AVAILABLE;
+}
+
+function assertProviderSelectable(providerId) {
+    if (!PROVIDERS_CONFIG[providerId] || !isSelectableProviderState(getCurrentProviderState(providerId))) {
+        throw new Error("LLM_PROVIDER_UNAVAILABLE");
+    }
+}
+
+async function refreshLlmProviderCapabilities() {
+    subscriptionProviderCapabilities = [];
+    if (hasDesktopSubscriptionBroker()) {
+        try {
+            const result = await window.electronAPI.subscriptionCapabilities();
+            if (Array.isArray(result?.providers)) {
+                subscriptionProviderCapabilities = result.providers.filter(providerId => (
+                    providerId === LLM_PROVIDER_IDS.CHATGPT_SUBSCRIPTION
+                    || providerId === LLM_PROVIDER_IDS.GROK_SUBSCRIPTION
+                ));
+            }
+        } catch {}
+    }
+    applyLlmProviderCapabilities();
+}
+
+function applyLlmProviderCapabilities() {
+    const select = document.getElementById("providerSelect");
+    for (const option of select.options) {
+        let state = window.VoiceLlmProviderContract.PROVIDER_STATES.UNAVAILABLE;
+        try { state = getCurrentProviderState(option.value); } catch {}
+        option.disabled = !isSelectableProviderState(state);
+        option.dataset.llmState = state;
+    }
+    const storedProvider = localStorage.getItem("vp_provider");
+    if (storedProvider && (!PROVIDERS_CONFIG[storedProvider]
+        || !isSelectableProviderState(getCurrentProviderState(storedProvider)))) {
+        localStorage.removeItem("vp_baseUrl");
+        localStorage.removeItem("vp_model");
+        localStorage.removeItem("vp_verified_provider");
+        appendConnectionMigrationNotice("先前選擇的LLM連線在此平台不可用；已阻止連線，請明確選擇新的provider。");
+    }
+}
+function joinApiUrl(baseUrl, path) {
+    const base = String(baseUrl || "").trim().replace(/\/+$/, "");
+    const suffix = String(path || "").trim().replace(/^\/+/, "");
+    return suffix ? `${base}/${suffix}` : base;
+}
+
+function readJsonStorage(key) {
+    try {
+        const value = JSON.parse(localStorage.getItem(key) || "{}");
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+        return {};
+    }
+}
+
+function getBrowserProviderCredential(_providerId, apiKey = "", _baseUrl = "") {
+    return apiKey;
+}
+
+function getProviderApiKey(providerId, baseUrl = getProviderBaseUrl(providerId)) {
+    if (window.voiceNativeBridge || window.electronAPI) return "";
+    const keys = readJsonStorage("vp_provider_keys");
+    const bindings = readJsonStorage("vp_provider_key_bindings");
+    const key = Object.prototype.hasOwnProperty.call(keys, providerId) ? (keys[providerId] || "") : "";
+    if (!key) return "";
+    if (bindings[providerId] !== normalizeCredentialBaseUrl(baseUrl)) {
+        delete keys[providerId];
+        delete bindings[providerId];
+        localStorage.setItem("vp_provider_keys", JSON.stringify(keys));
+        localStorage.setItem("vp_provider_key_bindings", JSON.stringify(bindings));
+        return "";
+    }
+    return key;
+}
+
+const desktopCredentialWrites = new Map();
+
+function appendConnectionMigrationNotice(message) {
+    const current = localStorage.getItem("vp_connection_migration_notice");
+    localStorage.setItem("vp_connection_migration_notice", current ? `${current} ${message}` : message);
+}
+
+function setProviderApiKey(providerId, apiKey, baseUrl = getProviderBaseUrl(providerId)) {
+    if (window.voiceNativeBridge?.credentialSet) {
+        if (!apiKey) {
+            if (window.voiceNativeBridge?.credentialClear) {
+                return window.voiceNativeBridge.credentialClear(providerId, baseUrl);
+            }
+            return Promise.resolve();
+        }
+        return window.voiceNativeBridge.credentialSet(providerId, baseUrl, apiKey);
+    }
+    if (window.electronAPI) {
+        const profile = desktopProviderProfile(providerId, baseUrl);
+        if (!DESKTOP_SECRET_PROFILES.has(profile)) return Promise.resolve();
+        // A blank desktop field means "leave the write-only credential unchanged".
+        if (!apiKey) return Promise.resolve();
+        const previous = desktopCredentialWrites.get(profile);
+        const write = () => window.electronAPI.providerCredentialSet(profile, apiKey);
+        const operation = previous ? previous.catch(() => {}).then(write) : Promise.resolve(write());
+        const pending = operation.finally(() => {
+            if (desktopCredentialWrites.get(profile) === pending) desktopCredentialWrites.delete(profile);
+        });
+        desktopCredentialWrites.set(profile, pending);
+        return pending;
+    }
+    const keys = readJsonStorage("vp_provider_keys");
+    const bindings = readJsonStorage("vp_provider_key_bindings");
+    if (apiKey) {
+        keys[providerId] = apiKey;
+        bindings[providerId] = normalizeCredentialBaseUrl(baseUrl);
+    } else {
+        delete keys[providerId];
+        delete bindings[providerId];
+    }
+    localStorage.setItem("vp_provider_keys", JSON.stringify(keys));
+    localStorage.setItem("vp_provider_key_bindings", JSON.stringify(bindings));
+    localStorage.removeItem("vp_apiKey");
+}
+
+function getProviderBaseUrl(providerId) {
+    const config = getProviderConfig(providerId);
+    if (providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID) return "";
+    if (config.kind === "subscription") return config.baseUrl;
+    const urls = readJsonStorage("vp_provider_urls");
+    if (urls[providerId]) return urls[providerId];
+    const legacyProvider = localStorage.getItem("vp_provider");
+    if (legacyProvider === providerId && localStorage.getItem("vp_baseUrl")) return localStorage.getItem("vp_baseUrl");
+    return config.baseUrl || "";
+}
+
+function setProviderBaseUrl(providerId, baseUrl) {
+    if (providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID) return;
+    const urls = readJsonStorage("vp_provider_urls");
+    urls[providerId] = String(baseUrl || "").trim().replace(/\/+$/, "");
+    localStorage.setItem("vp_provider_urls", JSON.stringify(urls));
+}
+
+function getProviderModel(providerId) {
+    if (providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID) return "";
+    const models = readJsonStorage("vp_provider_models");
+    if (models[providerId]) return models[providerId];
+    const legacyProvider = localStorage.getItem("vp_provider");
+    if (legacyProvider === providerId && localStorage.getItem("vp_model")) return localStorage.getItem("vp_model");
+    return getProviderConfig(providerId).defaultModels?.[0] || "";
+}
+
+function setProviderModel(providerId, model) {
+    if (providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID) return;
+    const models = readJsonStorage("vp_provider_models");
+    models[providerId] = model || (getProviderConfig(providerId).kind === "subscription" ? "auto" : "");
+    localStorage.setItem("vp_provider_models", JSON.stringify(models));
+}
+
+const LEGACY_DIRECT_PROVIDER_DEFAULT_URLS = Object.freeze({
+    omlx: "http://localhost:8000/v1",
+    openai: "https://api.openai.com/v1",
+    gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+    groq: "https://api.groq.com/openai/v1",
+    ollama: "http://localhost:11434/v1",
+    lmstudio: "http://localhost:1234/v1",
+    deepseek: "https://api.deepseek.com/v1",
+    custom: "",
+    claude: ""
+});
+
+function migrateLegacyDirectProviderSettings() {
+    const currentProvider = localStorage.getItem("vp_provider");
+    const isLegacyProvider = Object.prototype.hasOwnProperty.call(LEGACY_DIRECT_PROVIDER_DEFAULT_URLS, currentProvider);
+    const keys = readJsonStorage("vp_provider_keys");
+    const bindings = readJsonStorage("vp_provider_key_bindings");
+    const urls = readJsonStorage("vp_provider_urls");
+    const models = readJsonStorage("vp_provider_models");
+
+    if (isLegacyProvider) {
+        const legacyKey = keys[currentProvider] ?? localStorage.getItem("vp_apiKey") ?? "";
+        const legacyUrl = urls[currentProvider] ?? localStorage.getItem("vp_baseUrl")
+            ?? LEGACY_DIRECT_PROVIDER_DEFAULT_URLS[currentProvider];
+        const legacyModel = models[currentProvider] ?? localStorage.getItem("vp_model") ?? "";
+        if (!Object.prototype.hasOwnProperty.call(keys, DIRECT_API_PROVIDER_ID)) keys[DIRECT_API_PROVIDER_ID] = legacyKey;
+        if (!Object.prototype.hasOwnProperty.call(urls, DIRECT_API_PROVIDER_ID)) urls[DIRECT_API_PROVIDER_ID] = legacyUrl;
+        if (!Object.prototype.hasOwnProperty.call(models, DIRECT_API_PROVIDER_ID)) models[DIRECT_API_PROVIDER_ID] = legacyModel;
+    } else if (currentProvider === DIRECT_API_PROVIDER_ID) {
+        const scalarKey = localStorage.getItem("vp_apiKey");
+        const scalarUrl = localStorage.getItem("vp_baseUrl");
+        const scalarModel = localStorage.getItem("vp_model");
+        if (!Object.prototype.hasOwnProperty.call(keys, DIRECT_API_PROVIDER_ID) && scalarKey !== null) keys[DIRECT_API_PROVIDER_ID] = scalarKey;
+        if (!Object.prototype.hasOwnProperty.call(urls, DIRECT_API_PROVIDER_ID) && scalarUrl !== null) urls[DIRECT_API_PROVIDER_ID] = scalarUrl;
+        if (!Object.prototype.hasOwnProperty.call(models, DIRECT_API_PROVIDER_ID) && scalarModel !== null) models[DIRECT_API_PROVIDER_ID] = scalarModel;
+    }
+
+    const isRetiredProviderStorage = providerId => (
+        Object.prototype.hasOwnProperty.call(LEGACY_DIRECT_PROVIDER_DEFAULT_URLS, providerId)
+        || (/-subscription$/.test(providerId) && !Object.hasOwn(PROVIDERS_CONFIG, providerId))
+    );
+    const subscriptionIds = new Set([
+        LLM_PROVIDER_IDS.CHATGPT_SUBSCRIPTION,
+        LLM_PROVIDER_IDS.GROK_SUBSCRIPTION
+    ]);
+    for (const [storageName, values] of Object.entries({ keys, bindings, urls, models })) {
+        for (const providerId of Object.keys(values)) {
+            const forbiddenSubscriptionData = subscriptionIds.has(providerId) && storageName !== "models";
+            if (isRetiredProviderStorage(providerId) || forbiddenSubscriptionData) delete values[providerId];
+        }
+    }
+    if (keys[DIRECT_API_PROVIDER_ID] && urls[DIRECT_API_PROVIDER_ID] && !bindings[DIRECT_API_PROVIDER_ID]) {
+        bindings[DIRECT_API_PROVIDER_ID] = normalizeCredentialBaseUrl(urls[DIRECT_API_PROVIDER_ID]);
+    }
+    localStorage.setItem("vp_provider_keys", JSON.stringify(keys));
+    localStorage.setItem("vp_provider_key_bindings", JSON.stringify(bindings));
+    localStorage.setItem("vp_provider_urls", JSON.stringify(urls));
+    localStorage.setItem("vp_provider_models", JSON.stringify(models));
+    localStorage.removeItem("vp_apiKey");
+
+    if (isLegacyProvider) {
+        localStorage.setItem("vp_provider", DIRECT_API_PROVIDER_ID);
+        localStorage.setItem("vp_baseUrl", urls[DIRECT_API_PROVIDER_ID]);
+        localStorage.setItem("vp_model", models[DIRECT_API_PROVIDER_ID]);
+        if (currentProvider === "claude") {
+            appendConnectionMigrationNotice("Anthropic 原生 API 並非 OpenAI-compatible；請改填相容端點或使用 Claude Subscription。");
+        }
+    }
+}
+
+function removeRetiredOAuthState() {
+    const currentProvider = localStorage.getItem("vp_provider") || "";
+    localStorage.removeItem("vp_google_gemini_config");
+    sessionStorage.removeItem("vp_google_gemini_session_token");
+    for (const storage of [localStorage, sessionStorage]) {
+        const keys = [];
+        for (let index = 0; index < storage.length; index += 1) keys.push(storage.key(index));
+        for (const key of keys) {
+            if (/^vp_.*oauth/i.test(String(key || ""))) storage.removeItem(key);
+        }
+    }
+    for (const key of ["vp_provider_keys", "vp_provider_key_bindings", "vp_provider_urls", "vp_provider_models"]) {
+        const values = readJsonStorage(key);
+        for (const providerId of Object.keys(values)) {
+            if (/oauth/i.test(providerId)) delete values[providerId];
+        }
+        localStorage.setItem(key, JSON.stringify(values));
+    }
+    if (/oauth/i.test(currentProvider) && !PROVIDERS_CONFIG[currentProvider]) {
+        localStorage.setItem("vp_provider", DIRECT_API_PROVIDER_ID);
+        localStorage.removeItem("vp_baseUrl");
+        localStorage.removeItem("vp_model");
+        localStorage.removeItem("vp_apiKey");
+        localStorage.removeItem("vp_verified_provider");
+        appendConnectionMigrationNotice("先前的OAuth連線已退休；雲端模型請改用API Key快速設定。");
+    }
+}
+
+function buildProviderHeaders(config, apiKey) {
+    return {
+        "Content-Type": "application/json",
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
+    };
+}
+
+function buildProviderRequest(config, model, conversationMessages, maxTokens = 300) {
+    return { model, messages: conversationMessages, max_tokens: maxTokens };
+}
+
+function parseProviderReply(config, data) {
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === "string") return content.trim();
+    throw new Error("INVALID_RESPONSE_FORMAT");
+}
+
+async function requestProviderChat({ providerId, baseUrl, apiKey, model, conversationMessages, maxTokens = 300 }) {
+    const config = getProviderConfig(providerId);
+    if (providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID) {
+        if (window.voiceNativeBridge?.appleFoundationModels !== true || !window.voiceNativeBridge?.providerOperation) {
+            throw new Error("APPLE_MODEL_NATIVE_BRIDGE_REQUIRED");
+        }
+        const boundedMessages = conversationMessages.slice(-12).map(({ role, content }) => ({
+            role: String(role || ""),
+            content: String(content || "").slice(0, 8000)
+        }));
+        const result = await window.voiceNativeBridge.providerOperation({
+            operation: "apple.chat",
+            providerId: APPLE_FOUNDATION_MODEL_PROVIDER_ID,
+            messages: boundedMessages,
+            maxTokens: Math.min(Math.max(Number(maxTokens) || 300, 1), 1024),
+            locale: String(globalThis.navigator?.language || "en-US").slice(0, 64)
+        });
+        if (!result?.text) throw new Error("APPLE_MODEL_EMPTY_RESPONSE");
+        return result.text.trim();
+    }
+
+    if (!model || String(model).trim().toLowerCase() === "auto") throw new Error("MODEL_REQUIRED");
+    if (isSubscriptionProvider(providerId)) {
+        if (!hasDesktopSubscriptionBroker()) throw new Error("LLM_PROVIDER_UNAVAILABLE");
+        const result = await window.electronAPI.subscriptionOperation({
+            operation: "chat", providerId, model, messages: conversationMessages, maxTokens
+        });
+        if (!result?.text) throw new Error("INVALID_RESPONSE_FORMAT");
+        return result.text.trim();
+    }
+    if (window.voiceNativeBridge?.providerOperation) {
+        try {
+            const result = await window.voiceNativeBridge.providerOperation({
+                operation: "chat", providerId, baseUrl, model, messages: conversationMessages, maxTokens
+            });
+            if (!result?.text) throw new Error("INVALID_RESPONSE_FORMAT");
+            return result.text.trim();
+        } catch (error) {
+            throw error;
+        }
+    }
+    if (window.electronAPI?.providerOperation) {
+        const profile = desktopProviderProfile(providerId, baseUrl);
+        await desktopCredentialWrites.get(profile);
+        try {
+            const result = await window.electronAPI.providerOperation({
+                operation: "chat", providerId: profile, model, messages: conversationMessages, maxTokens
+            });
+            if (!result?.text) throw new Error("INVALID_RESPONSE_FORMAT");
+            return result.text.trim();
+        } catch (error) {
+            if (error?.message?.includes("CONNECTION_REFUSED") || error?.message?.includes("ECONNREFUSED") || /refused/i.test(String(error?.message || error))) {
+                throw new Error("無法連線至模型服務；請確認 oMLX 已啟動、port 8000 且監聽 127.0.0.1。");
+            }
+            throw error;
+        }
+    }
+
+    const endpointAccess = assertBrowserEndpointAccess(baseUrl);
+    const browserCredential = getBrowserProviderCredential(providerId, apiKey, baseUrl);
+    if (config.authMode === "required" && !browserCredential) throw new Error("API_KEY_REQUIRED");
+    const endpoint = joinApiUrl(baseUrl, config.chatPath);
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: buildProviderHeaders(config, browserCredential),
+        body: JSON.stringify(buildProviderRequest(config, model, conversationMessages, maxTokens)),
+        ...(usesHostedLocalNetworkAccess(endpointAccess) ? { targetAddressSpace: "local" } : {})
+    });
+    if (!response.ok) {
+        const detail = (await response.text()).substring(0, 500);
+        throw new Error(`HTTP_${response.status}: ${detail}`);
+    }
+    return parseProviderReply(config, await response.json());
+}
+
+function populateModelSelect(modelIds, selectedModel) {
+    const select = document.getElementById("modelSelect");
+    select.replaceChildren();
+    const unique = [...new Set(modelIds.filter(Boolean).map(String))];
+    if (selectedModel && !unique.includes(selectedModel)) unique.unshift(selectedModel);
+    for (const id of unique) {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = id;
+        option.selected = id === selectedModel;
+        select.appendChild(option);
+    }
+    document.getElementById("apiModel").value = selectedModel || select.value || "";
+}
+
+function browserEndpointAccess(baseUrl) {
+    return window.VoiceLocalEndpointPolicy.classifyEndpointAccess({
+        pageUrl: window.location.href,
+        apiBaseUrl: baseUrl,
+        runtimeKind: window.electronAPI?.providerOperation ? "electron" : "browser"
+    });
+}
+
+function usesHostedLocalNetworkAccess(access) {
+    return access.mode === "hosted-loopback" || access.mode === "hosted-lan";
+}
+
+function updateLocalEndpointNotice(baseUrl) {
+    const notice = document.getElementById("localEndpointNotice");
+    if (window.electronAPI?.providerOperation) {
+        const normalized = normalizeApiBaseUrl(baseUrl);
+        if (normalized === "http://127.0.0.1:8000/v1" || normalized === "http://localhost:8000/v1" ||
+            normalized === "http://127.0.0.1:11434/v1" || normalized === "http://localhost:11434/v1" ||
+            normalized === "http://127.0.0.1:1234/v1" || normalized === "http://localhost:1234/v1") {
+            notice.textContent = "由App安全broker直連同機模型";
+            notice.style.color = "#047857";
+            notice.style.fontSize = "11.5px";
+            notice.style.fontWeight = "400";
+            notice.style.background = "transparent";
+            notice.style.border = "0";
+            notice.style.borderRadius = "0";
+            notice.style.padding = "0";
+            return { allowed: true, mode: "electron-broker", message: notice.textContent };
+        }
+    }
+    const access = browserEndpointAccess(baseUrl);
+    const isLanHttp = access.mode === "hosted-lan" || access.mode === "local-web-lan";
+    notice.textContent = access.message;
+    notice.style.color = isLanHttp ? "#92400E" : (access.allowed ? "#047857" : "#B45309");
+    notice.style.fontSize = isLanHttp ? "13px" : "11.5px";
+    notice.style.fontWeight = isLanHttp ? "800" : "400";
+    notice.style.background = isLanHttp ? "#FFFBEB" : "transparent";
+    notice.style.border = isLanHttp ? "2px solid #F59E0B" : "0";
+    notice.style.borderRadius = isLanHttp ? "10px" : "0";
+    notice.style.padding = isLanHttp ? "10px" : "0";
+    return access;
+}
+
+function updateActiveLanHttpWarning() {
+    const warning = document.getElementById("activeLanHttpWarning");
+    if (!warning) return;
+    const providerId = localStorage.getItem("vp_provider") || DIRECT_API_PROVIDER_ID;
+    const config = getProviderConfig(providerId);
+    const baseUrl = getProviderBaseUrl(providerId);
+    let endpoint = null;
+    try { endpoint = new URL(baseUrl); } catch {}
+    const active = config.kind === "api"
+        && endpoint?.protocol === "http:"
+        && window.VoiceLocalEndpointPolicy.isLanHost(endpoint.hostname);
+    warning.style.display = active ? "block" : "none";
+    warning.textContent = active
+        ? `⚠️ 目前使用LAN HTTP模型（${endpoint.origin}）：API Key與對話會在區網以明文傳輸，只應在受信任LAN／VPN使用。`
+        : "";
+}
+
+function assertBrowserEndpointAccess(baseUrl) {
+    const access = updateLocalEndpointNotice(baseUrl);
+    if (!access.allowed) throw new Error(access.code);
+    return access;
+}
+
+async function saveCurrentProviderForm() {
+    if (!activeSettingsProvider) return;
+    const config = getProviderConfig(activeSettingsProvider);
+    if (config.kind === "api") {
+        const baseUrl = document.getElementById("apiBaseUrl").value;
+        setProviderBaseUrl(activeSettingsProvider, baseUrl);
+        await setProviderApiKey(activeSettingsProvider, document.getElementById("apiKey").value.trim(), baseUrl);
+        if (hasPrivilegedLlmBridge()) document.getElementById("apiKey").value = "";
+    }
+    if (activeSettingsProvider !== APPLE_FOUNDATION_MODEL_PROVIDER_ID) {
+        const model = document.getElementById("apiModel").value.trim() || document.getElementById("modelSelect").value;
+        if (model) setProviderModel(activeSettingsProvider, model);
+    }
+}
+
+function directApiPresetIdForBaseUrl(baseUrl) {
+    const normalized = normalizeApiBaseUrl(baseUrl);
+    for (const id of ["openai", "gemini", "llamacpp", "ollama", "lmstudio", "omlx"]) {
+        if (normalizeApiBaseUrl(window.VoiceDirectApiPresets.getDirectApiPreset(id).baseUrl) === normalized) return id;
+    }
+    return "custom";
+}
+
+function applyDirectApiPreset() {
+    const presetId = document.getElementById("directApiPreset").value;
+    if (presetId === "custom") return;
+    const preset = window.VoiceDirectApiPresets.getDirectApiPreset(presetId);
+    const previousBaseUrl = document.getElementById("apiBaseUrl").value;
+    invalidateModelDiscovery();
+    if (normalizeApiBaseUrl(previousBaseUrl) !== normalizeApiBaseUrl(preset.baseUrl)) {
+        document.getElementById("apiKey").value = "";
+        if (!window.electronAPI) setProviderApiKey(DIRECT_API_PROVIDER_ID, "", preset.baseUrl);
+        setProviderModel(DIRECT_API_PROVIDER_ID, preset.defaultModel);
+    }
+    document.getElementById("apiBaseUrl").value = preset.baseUrl;
+    setProviderBaseUrl(DIRECT_API_PROVIDER_ID, preset.baseUrl);
+    populateModelSelect(preset.defaultModel ? [preset.defaultModel] : [], preset.defaultModel);
+    if (presetId === "omlx") {
+        document.getElementById("apiKey").placeholder = "本機免驗證（可留空）";
+        document.getElementById("apiKeyHint").textContent = "oMLX 於本機 127.0.0.1:8000 執行，不需要 API Key。";
+        document.getElementById("modelDetectNotice").textContent = "請確認 oMLX 已在後台啟動；點擊按鈕取得模型清單。";
+    } else {
+        document.getElementById("apiKey").placeholder = `貼上${preset.name}的API Key`;
+        document.getElementById("apiKeyHint").textContent = `${preset.name}的Key只保存在此裝置；切換供應商時會自動清除，避免送往錯誤端點。`;
+        document.getElementById("modelDetectNotice").textContent = "請輸入對應的API Key；輸入後會自動取得模型清單。";
+    }
+    updateLocalEndpointNotice(preset.baseUrl);
+}
+
+async function updateSubscriptionStatus(providerId) {
+    if (!isSubscriptionProvider(providerId) || !hasDesktopSubscriptionBroker()) return;
+    const status = await window.electronAPI.subscriptionStatus(providerId);
+    if (activeSettingsProvider !== providerId) return;
+    const state = String(status?.state || "error");
+    document.getElementById("subscriptionAuthStatus").textContent = state === "authorized"
+        ? "✅ 已登入訂閱帳號" : (state === "expired" ? "⚠️ 授權已過期，請重新登入" : "尚未登入");
+    document.getElementById("subscriptionLoginBtn").style.display = state === "authorized" ? "none" : "inline-flex";
+    document.getElementById("subscriptionLogoutBtn").style.display = state === "authorized" ? "inline-flex" : "none";
+}
+
+async function beginSubscriptionLogin() {
+    const providerId = document.getElementById("providerSelect").value;
+    assertProviderSelectable(providerId);
+    if (!isSubscriptionProvider(providerId) || !hasDesktopSubscriptionBroker()) throw new Error("LLM_PROVIDER_UNAVAILABLE");
+    const result = await window.electronAPI.subscriptionBeginLogin(providerId);
+    if (activeSettingsProvider !== providerId || result?.state !== "authorizing") {
+        if (result?.loginId) {
+            try { await window.electronAPI.subscriptionCancelLogin(providerId, result.loginId); } catch {}
+        }
+        return;
+    }
+    subscriptionLoginState = { providerId, loginId: result.loginId };
+    const link = document.getElementById("subscriptionVerificationLink");
+    link.href = result.verificationUri;
+    link.textContent = "開啟供應商登入頁";
+    document.getElementById("subscriptionUserCode").textContent = result.userCode;
+    document.getElementById("subscriptionVerification").style.display = "block";
+    document.getElementById("subscriptionPollBtn").style.display = "inline-flex";
+    document.getElementById("subscriptionCancelBtn").style.display = "inline-flex";
+    document.getElementById("subscriptionAuthStatus").textContent = "等待你在供應商頁面完成授權…";
+}
+
+async function pollSubscriptionLogin() {
+    const state = subscriptionLoginState;
+    if (!state || activeSettingsProvider !== state.providerId) throw new Error("AUTH_TRANSACTION_EXPIRED");
+    const result = await window.electronAPI.subscriptionPollLogin(state.providerId, state.loginId);
+    if (activeSettingsProvider !== state.providerId) return;
+    if (result?.state === "authorized") {
+        subscriptionLoginState = null;
+        document.getElementById("subscriptionVerification").style.display = "none";
+        document.getElementById("subscriptionPollBtn").style.display = "none";
+        document.getElementById("subscriptionCancelBtn").style.display = "none";
+        await updateSubscriptionStatus(state.providerId);
+        await fetchModelsFromProvider();
+    } else {
+        document.getElementById("subscriptionAuthStatus").textContent = "尚未完成授權；完成後請再次檢查。";
+    }
+}
+
+async function cancelSubscriptionLogin() {
+    const state = subscriptionLoginState;
+    if (!state || !hasDesktopSubscriptionBroker()) return;
+    await window.electronAPI.subscriptionCancelLogin(state.providerId, state.loginId);
+    subscriptionLoginState = null;
+    document.getElementById("subscriptionVerification").style.display = "none";
+    document.getElementById("subscriptionPollBtn").style.display = "none";
+    document.getElementById("subscriptionCancelBtn").style.display = "none";
+    document.getElementById("subscriptionAuthStatus").textContent = "已取消登入。";
+}
+
+async function logoutSubscription() {
+    const providerId = document.getElementById("providerSelect").value;
+    if (!isSubscriptionProvider(providerId) || !hasDesktopSubscriptionBroker()) throw new Error("LLM_PROVIDER_UNAVAILABLE");
+    await window.electronAPI.subscriptionLogout(providerId);
+    subscriptionLoginState = null;
+    localStorage.removeItem("vp_verified_provider");
+    document.getElementById("subscriptionVerification").style.display = "none";
+    document.getElementById("subscriptionPollBtn").style.display = "none";
+    document.getElementById("subscriptionCancelBtn").style.display = "none";
+    populateModelSelect(getProviderConfig(providerId).defaultModels, getProviderConfig(providerId).defaultModels[0]);
+    await updateSubscriptionStatus(providerId);
+}
+
+async function loadProviderIntoForm(providerId, { preserveSavedUrl = false } = {}) {
+    const config = getProviderConfig(providerId);
+    activeSettingsProvider = providerId;
+    const isSubscription = config.kind === "subscription";
+    const isAppleFoundationModel = providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID;
+    document.getElementById("apiBaseUrlGroup").style.display = (isSubscription || isAppleFoundationModel) ? "none" : "block";
+    document.getElementById("apiKeyGroup").style.display = (isSubscription || isAppleFoundationModel) ? "none" : "block";
+    document.getElementById("subscriptionAuthGroup").style.display = isSubscription ? "block" : "none";
+    const selectedModel = getProviderModel(providerId);
+    populateModelSelect(config.defaultModels?.length ? config.defaultModels : [selectedModel], selectedModel);
+    document.getElementById("apiModel").value = selectedModel;
+
+    if (isSubscription) {
+        subscriptionLoginState = null;
+        document.getElementById("subscriptionVerification").style.display = "none";
+        document.getElementById("subscriptionPollBtn").style.display = "none";
+        document.getElementById("subscriptionCancelBtn").style.display = "none";
+        document.getElementById("modelDetectNotice").textContent = "登入後會從訂閱provider取得模型清單。";
+        await updateSubscriptionStatus(providerId);
+        return;
+    }
+    const baseUrl = preserveSavedUrl ? getProviderBaseUrl(providerId) : (config.baseUrl || getProviderBaseUrl(providerId));
+    document.getElementById("apiBaseUrl").value = baseUrl;
+    const isNativeBridge = Boolean(window.voiceNativeBridge?.providerOperation);
+    const isDesktopBroker = Boolean(window.electronAPI?.providerOperation);
+    document.getElementById("apiBaseUrl").disabled = isSubscription || isAppleFoundationModel;
+    document.getElementById("apiBaseUrlGroup").style.display = isAppleFoundationModel ? "none" : "block";
+    const directPresetGroup = document.getElementById("directApiPresetGroup");
+    directPresetGroup.style.display = providerId === DIRECT_API_PROVIDER_ID ? "block" : "none";
+    if (providerId === DIRECT_API_PROVIDER_ID) {
+        document.getElementById("directApiPreset").value = directApiPresetIdForBaseUrl(baseUrl);
+    }
+    document.getElementById("modelGroup").style.display = isAppleFoundationModel ? "none" : "block";
+    document.getElementById("appleIntelligenceStatus").style.display = isAppleFoundationModel ? "block" : "none";
+    document.getElementById("apiKey").value = (isSubscription || isAppleFoundationModel) ? "" : getProviderApiKey(providerId);
+    let desktopProfile = null;
+    if (isDesktopBroker && !isSubscription) {
+        try { desktopProfile = desktopProviderProfile(providerId, baseUrl); } catch {}
+    }
+    const desktopAcceptsKey = DESKTOP_SECRET_PROFILES.has(desktopProfile);
+    document.getElementById("apiKey").disabled = isSubscription || isAppleFoundationModel;
+    document.getElementById("apiKeyHint").textContent = isSubscription
+        ? "訂閱憑證由 Electron Main Process 存入作業系統安全儲存，不會寫入此頁的 localStorage。"
+        : (isNativeBridge
+            ? (window.voiceNativeBridge?.appleFoundationModels === true
+                ? `${config.keyHint} 金鑰由 iOS 原生 Keychain 安全儲存；此欄位不會回填。`
+                : `${config.keyHint} 金鑰由原生安全儲存保護；此欄位不會回填。`)
+            : (isDesktopBroker
+                ? (desktopAcceptsKey ? `${config.keyHint} 金鑰由作業系統安全儲存；此欄位不會回填。` : "桌面版只允許受信任的預設端點；本機端點不儲存金鑰，自訂端點會被拒絕。")
+                : config.keyHint));
+    if (isNativeBridge && window.voiceNativeBridge?.credentialHas) {
+        window.voiceNativeBridge.credentialHas(providerId, baseUrl).then(status => {
+            if (activeSettingsProvider === providerId && status?.hasCredential) {
+                document.getElementById("apiKey").placeholder = "已安全儲存金鑰；留空不變，輸入新值可更新";
+            }
+        }).catch(() => {});
+    } else if (isDesktopBroker && desktopAcceptsKey) {
+        window.electronAPI.providerCredentialHas(desktopProfile).then(status => {
+            if (activeSettingsProvider === providerId && status?.hasCredential) {
+                document.getElementById("apiKey").placeholder = "已安全儲存金鑰；留空不變，輸入新值可更新";
+            }
+        }).catch(() => {});
+    }
+    if (isAppleFoundationModel) {
+        document.getElementById("apiModel").value = "";
+        refreshAppleFoundationModelAvailability();
+    } else {
+        populateModelSelect(config.defaultModels?.length ? config.defaultModels : [selectedModel], selectedModel);
+        document.getElementById("apiModel").value = selectedModel;
+        if (config.kind === "api") fetchModelsFromProvider();
+        else document.getElementById("modelDetectNotice").textContent = "訂閱模型清單將由桌面 Bridge 在登入後提供；目前使用 auto。";
+    }
+}
+
+function invalidateModelDiscovery({ noticeText = "" } = {}) {
+    const invalidatedEpoch = modelDiscoveryEpoch;
+    modelDiscoveryEpoch += 1;
+    clearTimeout(modelDebounceTimer);
+    modelDebounceTimer = null;
+    if (modelDiscoveryController) modelDiscoveryController.abort();
+    modelDiscoveryController = null;
+    if (modelDiscoveryLoadingEpoch === invalidatedEpoch) {
+        document.getElementById("modelDetectNotice").textContent = noticeText;
+        modelDiscoveryLoadingEpoch = null;
+    }
+}
+
+function debouncedFetchModels() {
+    invalidateModelDiscovery();
+    modelDebounceTimer = setTimeout(fetchModelsFromProvider, 600);
+}
+
+function onApiBaseUrlInput() {
+    const providerId = document.getElementById("providerSelect").value;
+    const keyInput = document.getElementById("apiKey");
+    if (providerId === DIRECT_API_PROVIDER_ID && keyInput.value) {
+        keyInput.value = "";
+        if (!window.electronAPI) setProviderApiKey(providerId, "", document.getElementById("apiBaseUrl").value);
+        localStorage.removeItem("vp_verified_provider");
+        document.getElementById("apiKeyHint").textContent = "端點已變更；為避免把憑證送往錯誤主機，請重新輸入此端點的API Key。";
+    }
+    updateLocalEndpointNotice(document.getElementById("apiBaseUrl").value);
+    debouncedFetchModels();
+}
+
+async function openSettingsModal() {
+    migrateLegacyDirectProviderSettings();
+    configureAppleFoundationModelProviderOption();
+    const migrationNoticeElement = document.getElementById("migrationNotice");
+    migrationNoticeElement.textContent = "";
+    const storedProvider = localStorage.getItem("vp_provider");
+    const storedProviderIsBlocked = Boolean(storedProvider) && (
+        !PROVIDERS_CONFIG[storedProvider]
+        || !isSelectableProviderState(getCurrentProviderState(storedProvider))
+    );
+    const savedProvider = storedProviderIsBlocked ? storedProvider
+        : (PROVIDERS_CONFIG[storedProvider] ? storedProvider : DIRECT_API_PROVIDER_ID);
+    document.getElementById("providerSelect").value = PROVIDERS_CONFIG[savedProvider] ? savedProvider : "";
+    document.getElementById("ttsModeSelect").value = getTtsMode();
+    if (isIosBrowserEnvironment()) {
+        document.getElementById("ttsModeHint").textContent = "iPhone／iPad上的Kokoro.js目前有上游相容性問題，已改用裝置本機System Voice。";
+        document.getElementById("kokoroTtsOption").disabled = true;
+    }
+    document.getElementById("settingsModal").style.display = "flex";
+
+    const migrationNotice = localStorage.getItem("vp_connection_migration_notice");
+    if (migrationNotice) {
+        migrationNoticeElement.textContent = `⚠️ ${migrationNotice}`;
+        localStorage.removeItem("vp_connection_migration_notice");
+    }
+    if (storedProviderIsBlocked) {
+        activeSettingsProvider = storedProvider;
+        document.getElementById("apiBaseUrl").value = "";
+        document.getElementById("apiKey").value = "";
+        document.getElementById("apiModel").value = "";
+        populateModelSelect([], "");
+        document.getElementById("modelDetectNotice").textContent = "此LLM連線不可用，已阻止自動連線；請明確選擇新的provider。";
+        return;
+    }
+    await loadProviderIntoForm(savedProvider, { preserveSavedUrl: true });
+}
+
+async function onProviderSelectChange() {
+    invalidateModelDiscovery();
+    const nextProvider = document.getElementById("providerSelect").value;
+    if (subscriptionLoginState && subscriptionLoginState.providerId !== nextProvider) {
+        await cancelSubscriptionLogin();
+    }
+    if (activeSettingsProvider && activeSettingsProvider !== nextProvider) await saveCurrentProviderForm();
+    await loadProviderIntoForm(nextProvider, { preserveSavedUrl: true });
+}
+
+async function fetchModelsFromProvider() {
+    invalidateModelDiscovery();
+    const requestEpoch = modelDiscoveryEpoch;
+
+    const providerId = document.getElementById("providerSelect").value;
+    const config = getProviderConfig(providerId);
+    const notice = document.getElementById("modelDetectNotice");
+    const baseUrlInput = document.getElementById("apiBaseUrl");
+    const modelInput = document.getElementById("apiModel");
+    const modelSelect = document.getElementById("modelSelect");
+    const apiKeyInput = document.getElementById("apiKey");
+    const requestBaseUrlValue = baseUrlInput.value;
+    const requestApiKeyValue = apiKeyInput.value;
+    const requestModelValue = modelInput.value;
+    const requestModelSelectValue = modelSelect.value;
+    const requestActiveProvider = activeSettingsProvider;
+    const requestIsCurrent = () => (
+        requestEpoch === modelDiscoveryEpoch
+        && document.getElementById("providerSelect").value === providerId
+        && baseUrlInput.value === requestBaseUrlValue
+        && apiKeyInput.value === requestApiKeyValue
+        && activeSettingsProvider === requestActiveProvider
+        && modelInput.value === requestModelValue
+        && modelSelect.value === requestModelSelectValue
+    );
+
+    const baseUrl = requestBaseUrlValue.trim();
+    const apiKey = requestApiKeyValue.trim();
+    const selected = requestModelValue.trim() || getProviderModel(providerId);
+    if (isSubscriptionProvider(providerId)) {
+        notice.textContent = "🔄 正在從訂閱provider取得模型清單…";
+        modelDiscoveryLoadingEpoch = requestEpoch;
+        try {
+            if (!hasDesktopSubscriptionBroker()) throw new Error("LLM_PROVIDER_UNAVAILABLE");
+            const result = await window.electronAPI.subscriptionOperation({ operation: "models", providerId });
+            if (requestEpoch !== modelDiscoveryEpoch || activeSettingsProvider !== requestActiveProvider) return;
+            const ids = Array.isArray(result?.models) ? result.models.filter(id => id && typeof id === "string") : [];
+            if (!ids.length) throw new Error("EMPTY_MODEL_LIST");
+            populateModelSelect(ids, selected);
+            notice.textContent = `✅ 已取得 ${ids.length} 個訂閱模型。`;
+        } catch {
+            if (requestEpoch !== modelDiscoveryEpoch || activeSettingsProvider !== requestActiveProvider) return;
+            populateModelSelect(config.defaultModels, selected);
+            notice.textContent = "💡 無法取得訂閱模型；請確認已完成登入且方案包含此模型。";
+        } finally {
+            if (requestEpoch === modelDiscoveryEpoch) modelDiscoveryLoadingEpoch = null;
+        }
+        return;
+    }
+    if (!baseUrl) {
+        populateModelSelect([selected], selected);
+        notice.textContent = "請先輸入 API Base URL。";
+        updateLocalEndpointNotice(baseUrl);
+        return;
+    }
+    const endpointAccess = updateLocalEndpointNotice(baseUrl);
+    if (!endpointAccess.allowed && !window.voiceNativeBridge?.providerOperation && !window.electronAPI?.providerOperation) {
+        populateModelSelect([selected], selected);
+        notice.textContent = endpointAccess.message;
+        return;
+    }
+    const directPresetId = providerId === DIRECT_API_PROVIDER_ID ? directApiPresetIdForBaseUrl(baseUrl) : "custom";
+    if (directPresetId !== "custom" && !apiKey && !hasPrivilegedLlmBridge()
+        && window.VoiceDirectApiPresets.getDirectApiPreset(directPresetId).credentialRequired !== false) {
+        const preset = window.VoiceDirectApiPresets.getDirectApiPreset(directPresetId);
+        populateModelSelect(preset.defaultModel ? [preset.defaultModel] : [selected], preset.defaultModel || selected);
+        notice.textContent = `請先輸入${preset.name}的API Key。`;
+        return;
+    }
+
+    notice.textContent = "🔄 正在從 API 端點取得模型清單…";
+    modelDiscoveryLoadingEpoch = requestEpoch;
+    if (window.voiceNativeBridge?.providerOperation) {
+        const bridgeRequestIsCurrent = () => (
+            requestEpoch === modelDiscoveryEpoch
+            && document.getElementById("providerSelect").value === providerId
+            && activeSettingsProvider === requestActiveProvider
+        );
+        try {
+            if (apiKey) {
+                await setProviderApiKey(providerId, apiKey, baseUrl);
+                if (!bridgeRequestIsCurrent()) return;
+                apiKeyInput.value = "";
+            }
+            const result = await window.voiceNativeBridge.providerOperation({
+                operation: "models",
+                providerId,
+                baseUrl
+            });
+            if (!bridgeRequestIsCurrent()) return;
+            const ids = Array.isArray(result?.models) ? result.models.filter(id => id && !/whisper|embed|dall-e|tts/i.test(id)) : [];
+            if (!ids.length) throw new Error("EMPTY_MODEL_LIST");
+            populateModelSelect(ids, selected);
+        } catch (error) {
+            if (!bridgeRequestIsCurrent()) return;
+            populateModelSelect(config.defaultModels?.length ? config.defaultModels : [selected || "auto"], selected);
+            notice.textContent = "💡 原生安全 Bridge 無法取得模型；請確認金鑰或端點設定。";
+        } finally {
+            if (bridgeRequestIsCurrent()) modelDiscoveryLoadingEpoch = 0;
+        }
+        return;
+    }
+    if (window.electronAPI?.providerOperation) {
+        const brokerRequestIsCurrent = () => (
+            requestEpoch === modelDiscoveryEpoch
+            && document.getElementById("providerSelect").value === providerId
+            && activeSettingsProvider === requestActiveProvider
+        );
+        try {
+            const profile = desktopProviderProfile(providerId, baseUrl);
+            if (apiKey) {
+                await setProviderApiKey(providerId, apiKey, baseUrl);
+                if (!brokerRequestIsCurrent()) return;
+                apiKeyInput.value = "";
+            } else {
+                await desktopCredentialWrites.get(profile);
+                if (!brokerRequestIsCurrent()) return;
+            }
+            const result = await window.electronAPI.providerOperation({ operation: "models", providerId: profile });
+            if (!brokerRequestIsCurrent()) return;
+            const ids = Array.isArray(result?.models) ? result.models.filter(id => id && !/whisper|embed|dall-e|tts/i.test(id)) : [];
+            if (!ids.length) throw new Error("EMPTY_MODEL_LIST");
+            populateModelSelect(ids, selected);
+        } catch (error) {
+            if (!brokerRequestIsCurrent()) return;
+            populateModelSelect(config.defaultModels?.length ? config.defaultModels : [selected || "auto"], selected);
+            if (error?.message?.includes("CONNECTION_REFUSED") || error?.message?.includes("ECONNREFUSED") || /refused/i.test(String(error?.message || error))) {
+                notice.textContent = "無法連線至模型服務；請確認 oMLX 已啟動、port 8000 且監聽 127.0.0.1。";
+            } else {
+                notice.textContent = "💡 桌面安全 Broker 無法取得模型；請確認金鑰或使用受支援的預設端點。";
+            }
+        } finally {
+            if (brokerRequestIsCurrent()) modelDiscoveryLoadingEpoch = null;
+        }
+        return;
+    }
+    const browserCredential = apiKey;
+    const controller = new AbortController();
+    modelDiscoveryController = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+        const response = await fetch(joinApiUrl(baseUrl, config.modelsPath), {
+            method: "GET",
+            headers: buildProviderHeaders(config, browserCredential),
+            signal: controller.signal,
+            ...(usesHostedLocalNetworkAccess(endpointAccess) ? { targetAddressSpace: "local" } : {})
+        });
+        if (!requestIsCurrent()) return;
+        if (!response.ok) throw new Error(`HTTP_${response.status}`);
+        const data = await response.json();
+        if (!requestIsCurrent()) return;
+        let ids = Array.isArray(data.data) ? data.data.map(x => x.id || x.name) : [];
+        if (!ids.length && Array.isArray(data.models)) ids = data.models.map(x => x.id || x.name || x);
+        ids = ids.filter(id => id && !/whisper|embed|dall-e|tts/i.test(id));
+        if (!ids.length) throw new Error("EMPTY_MODEL_LIST");
+        populateModelSelect(ids, selected);
+        notice.textContent = `✅ 已取得 ${ids.length} 個模型。`;
+        modelDiscoveryLoadingEpoch = null;
+    } catch (error) {
+        if (!requestIsCurrent()) return;
+        console.warn("Model list request failed:", error);
+        populateModelSelect([selected], selected);
+        notice.textContent = usesHostedLocalNetworkAccess(endpointAccess)
+            ? "💡 無法連到本機／LAN模型。請使用Chrome 142+、允許本站的「本機網路存取」，並確認模型端點已啟用CORS。"
+            : "💡 無法即時取得模型；請保留或手動輸入有效模型名稱。可能是 CORS、金鑰或端點限制。";
+        modelDiscoveryLoadingEpoch = null;
+    } finally {
+        clearTimeout(timeoutId);
+        if (modelDiscoveryController === controller) modelDiscoveryController = null;
+    }
+}
+
+function onModelDropdownChange() {
+    invalidateModelDiscovery();
+    document.getElementById("apiModel").value = document.getElementById("modelSelect").value;
+}
+
+function onManualModelInput() {
+    invalidateModelDiscovery();
+}
+
+function toggleManualModelInput() {
+    const input = document.getElementById("apiModel");
+    const isHidden = input.style.display === "none";
+    input.style.display = isHidden ? "block" : "none";
+    document.getElementById("toggleManualModelBtn").textContent = isHidden ? "📋 選擇清單" : "✏️ 手動輸入";
+    if (isHidden) input.focus();
+}
+
+function setConnectionResult(message, color) {
+    const result = document.getElementById("testConnResult");
+    result.style.display = "block";
+    result.style.color = color;
+    result.textContent = message;
+}
+
+async function testApiConnection() {
+    const providerId = document.getElementById("providerSelect").value;
+    const config = getProviderConfig(providerId);
+    const model = document.getElementById("apiModel").value.trim() || document.getElementById("modelSelect").value;
+    setConnectionResult("🔄 正在發送測試問候…", "#00B4D8");
+    try {
+        await saveCurrentProviderForm();
+        const reply = await requestProviderChat({
+            providerId,
+            baseUrl: getProviderBaseUrl(providerId),
+            apiKey: getProviderApiKey(providerId),
+            model,
+            messages: [{ role: "user", content: "Hi! Reply with 'Connection OK'." }],
+            conversationMessages: [{ role: "user", content: "Hi! Reply with 'Connection OK'." }],
+            maxTokens: 20
+        });
+        localStorage.setItem("vp_verified_provider", providerId);
+        setConnectionResult(`✅ 連線成功！大腦回覆：「${reply}"`, "#10B981");
+        updateHeaderStatusBadge();
+    } catch (error) {
+        localStorage.removeItem("vp_verified_provider");
+        setConnectionResult(`❌ ${formatProviderError(error, config, getProviderBaseUrl(providerId), model)}`, "#EF4444");
+        updateHeaderStatusBadge();
+    }
+}
+
+async function saveSettings() {
+    await saveCurrentProviderForm();
+    const providerId = document.getElementById("providerSelect").value;
+    const model = document.getElementById("apiModel").value.trim() || document.getElementById("modelSelect").value;
+    const ttsMode = window.VoiceTtsPreference.normalizeTtsMode(document.getElementById("ttsModeSelect").value);
+    if (providerId !== APPLE_FOUNDATION_MODEL_PROVIDER_ID) setProviderModel(providerId, model);
+    localStorage.setItem("vp_provider", providerId);
+    if (isSubscriptionProvider(providerId)) localStorage.removeItem("vp_baseUrl");
+    else localStorage.setItem("vp_baseUrl", getProviderBaseUrl(providerId));
+    localStorage.setItem("vp_model", model);
+    localStorage.setItem("vp_ttsMode", ttsMode);
+    localStorage.removeItem("vp_enableBrowserKokoro");
+    localStorage.removeItem("vp_verified_provider");
+    if (voiceRuntime) voiceRuntime.cancel();
+    if (window.VoiceTtsPreference.shouldLoadBrowserKokoro({ mode: ttsMode, runtimeKind: voiceRuntime?.kind })) {
+        scheduleBrowserKokoroInitialization();
+    } else {
+        cancelPendingKokoroInitialization({ releaseModel: true });
+        if (ttsMode === "system") {
+            setTTSEngineStatus("系統語音（使用者選擇）", "#F59E0B");
+        } else if (voiceRuntime?.kind === "browser") {
+            setTTSEngineStatus("系統語音（Auto）", "#F59E0B");
+        } else if (voiceRuntime?.kind === "electron") {
+            voiceRuntime.capabilities().then(caps => {
+                if (caps?.ready && caps?.selectedTts) {
+                    const ep = caps.executionProvider;
+                    if (ep === "DmlExecutionProvider") setTTSEngineStatus("Kokoro Native DirectML", "#10B981");
+                    else if (ep === "CPUExecutionProvider") setTTSEngineStatus("Kokoro Native CPU", "#10B981");
+                    else setTTSEngineStatus("Kokoro Native", "#10B981");
+                } else {
+                    setTTSEngineStatus("System Voice (native unavailable)", "#F59E0B");
+                }
+            }).catch(() => {
+                setTTSEngineStatus("System Voice (native unavailable)", "#F59E0B");
+            });
+        } else {
+            setTTSEngineStatus("Kokoro（已選擇，使用時檢查）", "#8338EC");
+        }
+    }
+    updateHeaderStatusBadge();
+    closeSettingsModal();
+    const llmSummary = providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID
+        ? "Apple Intelligence（本機；availability 於使用時再次檢查）"
+        : (model && model.toLowerCase() !== "auto"
+            ? `${getProviderConfig(providerId).name}／${model}`
+            : "LLM 未設定（本機功能可用）");
+    console.log(`設定已儲存：${llmSummary}／TTS ${ttsMode}`);
+}
+
+function updateHeaderStatusBadge() {
+    const providerId = localStorage.getItem("vp_provider") || DIRECT_API_PROVIDER_ID;
+    const model = getProviderModel(providerId);
+    const verified = localStorage.getItem("vp_verified_provider") === providerId;
+    const badgeText = document.getElementById("headerConnText");
+    const badgeDot = document.getElementById("headerConnDot");
+    if (badgeText) {
+        badgeText.textContent = providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID
+            ? `${verified ? "🟢" : "🟡"} Apple Intelligence（本機）`
+            : (model && model.toLowerCase() !== "auto"
+                ? `${verified ? "🟢" : "🟡"} ${getProviderConfig(providerId).name}: ${model}`
+                : "⚪ LLM 未設定");
+    }
+    if (badgeDot) badgeDot.style.background = verified ? "#10B981" : "#F59E0B";
+    updateActiveLanHttpWarning();
+}
+
+async function closeSettingsModal() {
+    invalidateModelDiscovery();
+    if (subscriptionLoginState && hasDesktopSubscriptionBroker()) {
+        try { await cancelSubscriptionLogin(); } catch {}
+    }
+    document.getElementById("settingsModal").style.display = "none";
+    activeSettingsProvider = null;
+}
+
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+        closeSettingsModal();
+        closeCoachModal();
+    }
+});
+
+// App Init (Clean, AI Model Focused)
+async function migrateDesktopProviderCredentials() {
+    if (!window.electronAPI?.providerCredentialSet) return;
+    const legacyProvider = localStorage.getItem("vp_provider");
+    const legacySingle = localStorage.getItem("vp_apiKey");
+    const legacyMap = readJsonStorage("vp_provider_keys");
+    const legacyUrls = readJsonStorage("vp_provider_urls");
+    const candidates = new Map();
+    let failed = false;
+    const profileForStoredProvider = providerId => {
+        if (DESKTOP_SECRET_PROFILES.has(providerId)) return providerId;
+        if (providerId === DIRECT_API_PROVIDER_ID) {
+            return desktopProviderProfile(providerId, legacyUrls[providerId] || localStorage.getItem("vp_baseUrl"));
+        }
+        return null;
+    };
+    for (const [providerId, credential] of Object.entries(legacyMap)) {
+        if (typeof credential !== "string" || !credential) continue;
+        try {
+            const profile = profileForStoredProvider(providerId);
+            if (DESKTOP_SECRET_PROFILES.has(profile)) candidates.set(profile, credential);
+            else failed = true;
+        } catch { failed = true; }
+    }
+    if (legacySingle) {
+        try {
+            const profile = profileForStoredProvider(legacyProvider);
+            if (DESKTOP_SECRET_PROFILES.has(profile) && !candidates.has(profile)) candidates.set(profile, legacySingle);
+            else if (!DESKTOP_SECRET_PROFILES.has(profile)) failed = true;
+        } catch { failed = true; }
+    }
+    for (const [profile, credential] of candidates) {
+        try {
+            await window.electronAPI.providerCredentialSet(profile, credential);
+        } catch {
+            failed = true;
+        }
+    }
+    // Never retain plaintext credentials in an Electron renderer.
+    localStorage.removeItem("vp_provider_keys");
+    localStorage.removeItem("vp_apiKey");
+    if (failed) {
+        appendConnectionMigrationNotice("桌面安全儲存無法完成舊金鑰遷移；明文副本已移除，請重新輸入 API Key。");
+    }
+}
+
+async function initializeLocalFirstWeb() {
+    const offlineStatus = document.getElementById("offlineStatus");
+    if (window.location.protocol !== "http:" && window.location.protocol !== "https:") {
+        if (offlineStatus) offlineStatus.textContent = "⚠️ 請使用 HTTPS 安裝離線版";
+        return;
+    }
+    if ("serviceWorker" in navigator) {
+        const markOfflineReady = () => {
+            const controlled = Boolean(navigator.serviceWorker.controller);
+            document.documentElement.dataset.offlineReady = controlled ? "true" : "reload-required";
+            if (offlineStatus) offlineStatus.textContent = controlled ? "✅ 已可離線使用" : "↻ 重新載入後可離線";
+        };
+        navigator.serviceWorker.addEventListener("controllerchange", markOfflineReady, { once: true });
+        try {
+            const registration = await navigator.serviceWorker.register("./service-worker.js", {
+                scope: "./",
+                updateViaCache: "none"
+            });
+            registration.update().catch(error => console.warn("Service Worker update check failed:", error));
+            navigator.serviceWorker.ready.then(markOfflineReady).catch(() => {});
+        } catch (error) {
+            if (offlineStatus) offlineStatus.textContent = "⚠️ 離線安裝失敗";
+            console.warn("Offline App Shell registration failed:", error);
+        }
+    } else if (offlineStatus) {
+        offlineStatus.textContent = "⚠️ 此瀏覽器不支援離線安裝";
+    }
+    const persisted = await window.VoiceModelCache.requestPersistentStorage(navigator);
+    const storage = await window.VoiceModelCache.estimateStorage(navigator);
+    document.documentElement.dataset.persistentStorage = persisted ? "granted" : "best-effort";
+    if (storage) {
+        document.documentElement.dataset.storageRemaining = String(storage.remaining);
+        if (storage.remaining < 80 * 1024 * 1024 && offlineStatus) {
+            offlineStatus.title = "本機儲存空間不足，語音模型可能無法完整下載";
+        }
+    }
+}
+
+async function migrateProviderSettingsForEnvironment() {
+    await migrateDesktopProviderCredentials();
+    migrateLegacyDirectProviderSettings();
+    await refreshLlmProviderCapabilities();
+}
+
+async function initApp() {
+    await initializeLocalFirstWeb();
+    removeRetiredOAuthState();
+    await migrateProviderSettingsForEnvironment();
+    configureAppleFoundationModelProviderOption();
+    const storedProvider = localStorage.getItem("vp_provider");
+    if (!PROVIDERS_CONFIG[storedProvider]) {
+        localStorage.setItem("vp_provider", DIRECT_API_PROVIDER_ID);
+    }
+    if (!getProviderBaseUrl(DIRECT_API_PROVIDER_ID)) {
+        setProviderBaseUrl(DIRECT_API_PROVIDER_ID, PROVIDERS_CONFIG[DIRECT_API_PROVIDER_ID].baseUrl);
+    }
+    const activeProvider = localStorage.getItem("vp_provider");
+    if (PROVIDERS_CONFIG[activeProvider] && isSelectableProviderState(getCurrentProviderState(activeProvider))) {
+        if (isSubscriptionProvider(activeProvider)) localStorage.removeItem("vp_baseUrl");
+        else localStorage.setItem("vp_baseUrl", getProviderBaseUrl(activeProvider));
+        localStorage.setItem("vp_model", getProviderModel(activeProvider));
+    } else {
+        localStorage.removeItem("vp_baseUrl");
+        localStorage.removeItem("vp_model");
+    }
+    updateHeaderStatusBadge();
+    updateCoachUI("idle");
+    await createVoiceRuntime();
+
+    // Browser models are lazy-loaded on the first explicit STT/TTS action.
+    if (window.location.protocol === "file:") {
+        const notice = document.getElementById("micNotice");
+        if (notice) notice.textContent = "💡 注意：以本地檔案 (file://) 開啟時，瀏覽器安全政策會限制模型下載與快取；請使用 npm run start:web 並以 http://127.0.0.1:8765 開啟。";
+    }
+    const ttsMode = getTtsMode();
+    if (window.VoiceTtsPreference.shouldLoadBrowserKokoro({ mode: ttsMode, runtimeKind: voiceRuntime.kind })) {
+        scheduleBrowserKokoroInitialization(3000);
+    } else {
+        const capabilities = await voiceRuntime.capabilities();
+        const nativeTtsReady = (voiceRuntime.kind === "electron" || voiceRuntime.kind === "android") && Boolean(capabilities.selectedTts);
+        const useModelTts = window.VoiceTtsPreference.shouldUseModelTts({ mode: ttsMode, runtimeKind: voiceRuntime.kind });
+        let idleTtsLabel = "系統語音";
+        if (useModelTts && nativeTtsReady) {
+            if (voiceRuntime.kind === "android") {
+                idleTtsLabel = "Android 本機系統語音";
+            } else {
+                const ep = capabilities.executionProvider;
+                if (ep === "DmlExecutionProvider") idleTtsLabel = "Kokoro Native DirectML";
+                else if (ep === "CPUExecutionProvider") idleTtsLabel = "Kokoro Native CPU";
+                else idleTtsLabel = "Kokoro Native";
+            }
+        }
+        else if (ttsMode === "system") idleTtsLabel = "系統語音（使用者選擇）";
+        else if (voiceRuntime.kind === "browser") idleTtsLabel = "系統語音（Auto）";
+        else if (useModelTts) idleTtsLabel = "System Voice (native unavailable)";
+        setTTSEngineStatus(idleTtsLabel, useModelTts && nativeTtsReady ? "#10B981" : "#F59E0B");
+    }
+}
+
+window.addEventListener("beforeunload", () => voiceRuntime?.dispose());
+initApp().catch(error => console.error("App initialization failed", error));
+</script>
+</body>
+</html>

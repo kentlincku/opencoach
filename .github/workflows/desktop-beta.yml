@@ -1,0 +1,39 @@
+name: Desktop Beta and verification
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'resources/**'
+      - 'spikes/packaged-runtime/**'
+      - 'scripts/build-macos-runtime.sh'
+      - 'scripts/check-macos-runtime.mjs'
+      - '.github/workflows/desktop-beta.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos-arm64-verify:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - run: npm run build:icons
+      - run: npm test
+      - name: Build macOS embedded runtime
+        run: bash scripts/build-macos-runtime.sh
+      - name: Verify embedded runtime binary exists and is executable
+        run: |
+          test -x dist/voice-runtime/voice-runtime
+      - name: Build unsigned engineering artifacts
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run pack:mac
+      - name: Validate runtime inside packaged app
+        run: node scripts/check-macos-runtime.mjs --app "dist/mac-arm64/Voice Practice.app"

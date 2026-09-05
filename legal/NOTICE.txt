@@ -1,0 +1,85 @@
+========================================================================
+Voice Practice Unified - Windows Native Voice Runtime Notice (R5)
+========================================================================
+
+This binary distribution package ("voice-runtime-windows-x64") contains
+third-party open-source software libraries and binaries. Each component is
+licensed under its respective upstream license.
+
+REDISTRIBUTION LICENSE CLEARANCE REMEDIATION (R5):
+------------------------------------------------------------------------
+In Release R5, all previously bundled GNU General Public License (GPL)
+and copyleft components have been systematically eliminated from the
+runtime bundle:
+
+1. PyAV / FFmpeg / x264 / x265 Codecs: REMOVED.
+   - Replaced with a standalone, version-pinned PCM-WAV-only audio decoder
+     (`native/python/voice_runtime/wav_decoder.py`) accepting strictly
+     controlled 16-bit 16kHz PCM WAV input.
+   - `faster-whisper` is patched via an MIT-licensed patch
+     (`patches/faster-whisper-1.2.1-wav-only.patch`, upstream commit
+     65882eee9f5cdbeeb2d877f1131d48cf241b327d) removing PyAV import requirements.
+   - Runtime artifact contains zero PyAV, FFmpeg, libx264, or libx265 binaries.
+
+2. phonemizer / eSpeak-NG / espeakng-loader: REMOVED.
+   - Replaced with Misaki English G2P (`misaki==0.9.4`, Apache-2.0),
+     producing phonemes directly for Kokoro ONNX inference.
+   - Neither phonemizer nor eSpeak-NG DLLs/data are packaged or loaded.
+
+LICENSE EVALUATION STATUS:
+------------------------------------------------------------------------
+GPL_COMPONENT_TREE_SCAN: PASS (Zero GPL/LGPL/copyleft components in runtime tree)
+ENGINEERING_LICENSE_INVENTORY: PASS (66 locked pip packages + 2 in-tree modules permissively licensed)
+FORMAL_LEGAL_CLEARANCE: NOT_RUN (Engineering evaluation only; not legal counsel sign-off)
+
+PACKAGE BREAKDOWN:
+------------------------------------------------------------------------
+- Lockfile Packages: 66 packages (requirements-windows-x64.lock.txt, SHA-256 pinned)
+- In-Tree Replacement Modules: 2 modules:
+    * kokoro_onnx: Derived from thewh1teagle/kokoro-onnx (MIT License).
+      Modifications and Misaki G2P integration under Apache-2.0.
+      Contains DEFAULT_VOCAB derived from upstream MIT project.
+    * num2words: Clean-room English number verbalization engine under Apache-2.0.
+
+COMPONENT INVENTORY & LICENSES:
+------------------------------------------------------------------------
+1. Apache License 2.0 Components:
+   - misaki (version 0.9.4) - Apache-2.0
+   - huggingface-hub (Apache-2.0)
+   - tokenizers (Apache-2.0)
+   - flatbuffers (Apache-2.0)
+   - packaging (Apache-2.0 OR BSD-2-Clause)
+   - kokoro_onnx engine modifications (Apache-2.0, base derived under MIT)
+   - num2words clean-room verbalization engine (Apache-2.0)
+
+2. MIT License Components:
+   - onnxruntime (version 1.29.0) - MIT
+   - ctranslate2 (version 4.8.2) - MIT
+   - faster-whisper (version 1.2.1+wavonly) - MIT
+   - spacy (version 3.8.16) - MIT
+   - en-core-web-sm (version 3.8.0) - MIT
+   - addict (version 2.4.0) - MIT
+   - filelock, fsspec, pyyaml, regex, sympy, pefile, setuptools
+   - thinc, blis, cymem, murmurhash, preshed, srsly, wasabi, weasel
+
+3. BSD 3-Clause / 2-Clause License Components:
+   - numpy (BSD-3-Clause)
+   - soundfile (BSD-3-Clause)
+   - protobuf (BSD-3-Clause)
+   - jinja2, markupsafe (BSD-3-Clause)
+   - pywin32-ctypes, cffi, pycparser (BSD-3-Clause)
+   - httpx, httpcore, h11, idna (BSD-3-Clause)
+
+4. Mozilla Public License 2.0 Components:
+   - certifi (MPL-2.0)
+   - tqdm (MPL-2.0 AND MIT)
+
+5. Model Weights & Training Corpora Attributions:
+   - Kokoro v1.0 ONNX model: Apache-2.0 license (hexgrad / thewh1teagle).
+   - Kokoro voices (voices-v1.0.bin): Apache-2.0 license; acoustic style features
+     derived from training audio corpora including LibriTTS (CC-BY 4.0),
+     LJSpeech (Public Domain). Attribution is hereby provided to Vassil Panayotov,
+     Daniel Povey, and the LibriTTS corpus contributors.
+   - Whisper Base (English): MIT license (OpenAI / Systran faster-whisper).
+
+See THIRD_PARTY_LICENSES.txt for complete license texts.

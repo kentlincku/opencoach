@@ -1,0 +1,93 @@
+﻿diff --git a/faster_whisper/audio.py b/faster_whisper/audio.py
+index 222e73b..a6e35ef 100644
+--- a/faster_whisper/audio.py
++++ b/faster_whisper/audio.py
+@@ -9,13 +9,57 @@ However, the API is quite low-level so we need to manipulate audio frames direct
+ import gc
+ import io
+ import itertools
++import wave
+
+ from typing import BinaryIO, Union
+
+-import av
++try:
++    import av
++except ImportError:
++    av = None
++
+ import numpy as np
+
+
++def _decode_pcm_wav(
++    input_file: Union[str, BinaryIO],
++    sampling_rate: int = 16000,
++    split_stereo: bool = False,
++):
++    if isinstance(input_file, (str, bytes, bytearray)):
++        f = io.BytesIO(input_file) if isinstance(input_file, (bytes, bytearray)) else input_file
++        wav = wave.open(f, "rb")
++    else:
++        wav = wave.open(input_file, "rb")
++
++    with wav:
++        n_channels = wav.getnchannels()
++        sampwidth = wav.getsampwidth()
++        framerate = wav.getframerate()
++        n_frames = wav.getnframes()
++        frames = wav.readframes(n_frames)
++
++    if sampwidth != 2:
++        raise ValueError(f"Unsupported sample width {sampwidth} (only 16-bit PCM is supported)")
++    if framerate != sampling_rate:
++        raise ValueError(f"Sample rate {framerate} does not match required {sampling_rate}")
++
++    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
++
++    if n_channels == 2:
++        left_channel = audio[0::2]
++        right_channel = audio[1::2]
++        if split_stereo:
++            return left_channel, right_channel
++        return (left_channel + right_channel) / 2.0
++    elif n_channels == 1:
++        if split_stereo:
++            return audio, audio
++        return audio
++    else:
++        raise ValueError(f"Unsupported channel count {n_channels}")
++
++
+ def decode_audio(
+     input_file: Union[str, BinaryIO],
+     sampling_rate: int = 16000,
+@@ -34,6 +78,9 @@ def decode_audio(
+       If `split_stereo` is enabled, the function returns a 2-tuple with the
+       separated left and right channels.
+     """
++    if av is None:
++        return _decode_pcm_wav(input_file, sampling_rate=sampling_rate, split_stereo=split_stereo)
++
+     resampler = av.audio.resampler.AudioResampler(
+         format="s16",
+         layout="mono" if not split_stereo else "stereo",
+@@ -84,7 +131,7 @@ def _ignore_invalid_frames(frames):
+             yield next(iterator)
+         except StopIteration:
+             break
+-        except av.error.InvalidDataError:
++        except (getattr(getattr(av, "error", None), "InvalidDataError", ()),):
+             continue
+
+
+diff --git a/requirements.txt b/requirements.txt
+index 9a15d6a..2567705 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -2,5 +2,4 @@ ctranslate2>=4.0,<5
+ huggingface_hub>=0.21
+ tokenizers>=0.13,<1
+ onnxruntime>=1.14,<2 
+-av>=11
+ tqdm
+\ No newline at end of file

@@ -1,0 +1,5 @@
+# Install into a dedicated Python 3.11/3.12 virtual environment on Apple Silicon.
+numpy
+kokoro>=0.9
+mlx-whisper
+soundfile

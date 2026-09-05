@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["schemaVersion", "release", "models"],
+  "properties": {
+    "schemaVersion": {"const": 1}, "release": {"type": "string", "minLength": 1},
+    "models": {"type": "object", "additionalProperties": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "purpose", "license", "artifacts"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1}, "purpose": {"type": "string", "minLength": 1},
+        "license": {"type": "object", "additionalProperties": false, "required": ["spdx", "url"], "properties": {"spdx": {"type": "string", "minLength": 1}, "url": {"type": "string", "format": "uri", "pattern": "^https://"}}},
+        "artifacts": {"type": "object"}
+      }
+    }}
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kentlin/voice-practice/schemas/runtime-manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "release", "artifacts"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "release": {"type": "string", "minLength": 1},
+    "artifacts": {
+      "type": "object",
+      "propertyNames": {"enum": ["darwin-arm64", "win32-x64-cpu", "win32-x64-cuda"]},
+      "additionalProperties": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["url", "sha256", "bytes", "entrypoint", "archive"],
+      "properties": {
+        "url": {"type": "string", "format": "uri", "pattern": "^https://(github\\.com|objects\\.githubusercontent\\.com|release-assets\\.githubusercontent\\.com)/"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "entrypoint": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"},
+        "archive": {"const": "zip"}
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+OpenCoach
+Copyright 2026 OpenCoach contributors
+
+This product includes software developed by third parties under their own
+licenses. See THIRD_PARTY_NOTICES.md and legal/THIRD_PARTY_LICENSES.txt.
+
+The in-tree native/python/kokoro_onnx adapter contains portions derived from
+kokoro-onnx by thewh1teagle under the MIT License. Its source file preserves
+the upstream copyright and permission notice.
+
+The Windows WAV-only faster-whisper path is prepared from upstream
+faster-whisper v1.2.1 at Git commit
+65882eee9f5cdbeeb2d877f1131d48cf241b327d and the patch stored in
+patches/faster-whisper-1.2.1-wav-only.patch.
+
+No model weights, voice embeddings, packaged native runtimes, installers, or
+signed application bundles are licensed by the root Apache-2.0 license merely
+because build support or manifests appear in this repository. Each release
+asset must carry its own license and provenance information.

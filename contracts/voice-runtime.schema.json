@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voice-practice.local/contracts/voice-runtime.schema.json",
+  "title": "Voice Runtime Capability Response",
+  "description": "Capability result returned by runtime.health. Backend identifiers are extensible strings; clients must degrade safely when an identifier is unsupported.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "platform",
+    "arch",
+    "sttBackends",
+    "ttsBackends",
+    "selectedStt",
+    "selectedTts",
+    "ready",
+    "degradedReason"
+  ],
+  "properties": {
+    "protocol": { "type": "integer", "minimum": 1 },
+    "platform": { "type": "string", "minLength": 1 },
+    "arch": { "type": "string", "minLength": 1 },
+    "sttBackends": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "ttsBackends": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "selectedStt": { "type": ["string", "null"] },
+    "selectedTts": { "type": ["string", "null"] },
+    "ready": { "type": "boolean" },
+    "degradedReason": { "type": ["string", "null"] },
+    "fake": { "type": "boolean" },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "whisperModel": { "type": "string" },
+    "executionProvider": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+# Default repository owner; branch protection determines whether approval is mandatory.
+* @kentlincku
+
+# Shared product and contracts
+/apps/web/ @kentlincku
+/contracts/ @kentlincku
+/schemas/ @kentlincku
+
+# Desktop platforms
+/apps/desktop/ @kentlincku
+/native/python/ @kentlincku
+/electron-builder.yml @kentlincku
+
+# Native mobile platforms
+/apps/ios/ @kentlincku
+/apps/android/ @kentlincku
+
+# CI, release, and synchronization policy
+/.github/workflows/ @kentlincku
+/scripts/ @kentlincku
+/docs/DEVELOPMENT_SYNC.md @kentlincku

@@ -1,0 +1,1 @@
+# Serialization classes are referenced directly; no reflection-based bridge surface is used.

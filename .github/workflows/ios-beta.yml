@@ -1,0 +1,55 @@
+name: iOS Beta and verification
+on:
+  pull_request:
+    paths:
+      - 'apps/ios/**'
+      - 'contracts/native-bridge-protocol.json'
+      - '.github/workflows/ios-beta.yml'
+  push:
+    branches: [main]
+    tags: ['v0.2.0-beta.*']
+permissions:
+  contents: read
+jobs:
+  ios-verify:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:icons
+      - run: npm run build:web
+      - name: Run Swift Core and Bridge Unit Tests
+        run: |
+          cd apps/ios
+          swift test
+          swift run VoicePracticeTests
+      - name: Test iOS App on Simulator
+        run: |
+          set -euo pipefail
+          SIMULATORS_JSON=$(mktemp)
+          trap 'rm -f "$SIMULATORS_JSON"' EXIT
+          xcrun simctl list devices available -j > "$SIMULATORS_JSON"
+          DEVICE_ID=$(jq -r '[.devices | to_entries[] | .value[] | select(.name | contains("iPhone"))][0].udid // empty' "$SIMULATORS_JSON")
+          if [ -z "$DEVICE_ID" ]; then
+            echo '::error::NO_AVAILABLE_IPHONE_SIMULATOR'
+            exit 1
+          fi
+          SIMULATOR_STATE=$(jq -r --arg id "$DEVICE_ID" '[.devices | to_entries[] | .value[] | select(.udid == $id)][0].state // empty' "$SIMULATORS_JSON")
+          case "$SIMULATOR_STATE" in
+            'Booted') ;;
+            'Shutdown') xcrun simctl boot "$DEVICE_ID" ;;
+            *) echo "::error::UNSUPPORTED_SIMULATOR_STATE:$SIMULATOR_STATE"; exit 1 ;;
+          esac
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          echo "Testing on Simulator device UDID: $DEVICE_ID"
+          xcodebuild -project apps/ios/VoicePractice.xcodeproj -scheme VoicePractice -destination "id=$DEVICE_ID" test CODE_SIGNING_ALLOWED=NO
+      - name: Verify Bundled Web Resources in App
+        run: |
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "VoicePractice.app" | grep -v "Test" | head -n 1)
+          test -n "$APP_PATH"
+          test -f "$APP_PATH/web/index.html"
+          test -f "$APP_PATH/web/runtime/runtime-contract.js"

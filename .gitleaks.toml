@@ -1,0 +1,14 @@
+title = "OpenCoach Gitleaks configuration"
+
+[allowlist]
+description = "Known non-secret platform and cryptography contract literals"
+regexTarget = "match"
+regexes = [
+  '''win32-x64-cpu''',
+  '''AES/GCM/NoPadding'''
+]
+paths = [
+  '''(^|/)apps/web/vendor/''',
+  '''(^|/)apps/ios/VoicePractice/Resources/web/''',
+  '''(^|/)node_modules/'''
+]

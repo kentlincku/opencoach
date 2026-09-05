@@ -1,0 +1,4 @@
+# The upstream faster-whisper requirements.txt contains a significant trailing
+# space used as patch context. Do not let repository whitespace checks rewrite
+# or reject that context line.
+*.patch whitespace=-blank-at-eol

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Voice Practice Runtime Request",
+  "$comment": "The result of runtime.health must conform to voice-runtime.schema.json.",
+  "type": "object",
+  "required": ["id", "method", "params"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "method": {
+      "enum": ["runtime.health", "tts.synthesize", "stt.transcribe"]
+    },
+    "params": { "type": "object" }
+  },
+  "additionalProperties": false
+}

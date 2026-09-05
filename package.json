@@ -1,0 +1,44 @@
+{
+  "name": "voice-practice-unified",
+  "version": "0.2.0-beta.1",
+  "private": true,
+  "description": "Local-first cross-platform voice practice with shared web, desktop, iOS, and Android runtimes.",
+  "author": "kentlin",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kentlincku/opencoach.git"
+  },
+  "main": "apps/desktop/main.cjs",
+  "scripts": {
+    "start": "npm run build:web && electron .",
+    "prestart:web": "npm run build:web",
+    "start:web": "node scripts/start-local-web.mjs",
+    "build:web": "node scripts/build-web.mjs",
+    "build:icons": "node scripts/build-icons.mjs",
+    "prepack:mac": "node scripts/check-macos-runtime.mjs",
+    "pack:mac": "npm run build:web && electron-builder --mac dmg zip --arm64",
+    "verify:mac:voice": "node scripts/verify-macos-packaged-voice.mjs --app \"dist/mac-arm64/Voice Practice.app\"",
+    "verify:mac:voice:app": "node scripts/macos-packaged-voice-e2e.cjs --app \"dist/mac-arm64/Voice Practice.app\"",
+    "pack:win": "npm run build:web && electron-builder --win nsis portable --x64",
+    "dist:dir": "npm run build:web && electron-builder --dir",
+    "pretest": "npm run build:web",
+    "test": "node scripts/run-tests.mjs"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "3.3.3",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "0.25.9",
+    "kokoro-js": "1.1.1",
+    "png-to-ico": "^3.0.1",
+    "sharp": "0.35.4",
+    "yazl": "^3.3.1"
+  },
+  "dependencies": {
+    "yauzl": "^3.4.0"
+  },
+  "overrides": {
+    "sharp": "0.35.4"
+  }
+}

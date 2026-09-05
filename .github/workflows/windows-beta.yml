@@ -1,0 +1,61 @@
+name: Windows engineering artifacts
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-beta.yml'
+      - 'tests/windows-*.test.cjs'
+      - 'scripts/*windows*.ps1'
+      - 'scripts/verify-dpapi-live.cjs'
+      - 'electron-builder.windows.yml'
+      - 'apps/desktop/**'
+      - 'apps/web/**'
+      - 'resources/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+    inputs:
+      label:
+        description: 'Unsigned engineering build label (e.g. v0.2.0-beta.1-eng)'
+        required: false
+        default: 'eng'
+permissions:
+  contents: read
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with: {python-version: '3.11'}
+      - run: npm ci
+      - run: npm run build:icons
+      - run: npm test
+      - name: Check Node syntax
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem -Path apps/desktop -Filter *.cjs -File
+            Get-ChildItem -Path scripts -Filter *.mjs -File
+          )
+          foreach ($file in $files) {
+            node --check $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Node syntax check failed: $($file.FullName)"
+            }
+          }
+      - name: Build and verify fresh SHA-bound Windows packages
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-verify-windows-package.ps1 -ExpectedCodeSha $sha
+      - name: Write engineering artifact label
+        shell: pwsh
+        env:
+          BUILD_LABEL: ${{ inputs.label }}
+        run: |
+          $label = if ($env:BUILD_LABEL) { $env:BUILD_LABEL } else { 'eng' }
+          $stamp = "UNSIGNED-ENGINEERING-ARTIFACT - ${label} - NOT for production"
+          Set-Content -Path 'dist/engineering-note.txt' -Value $stamp
+      - run: node scripts/write-checksums.mjs dist
