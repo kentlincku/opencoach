@@ -74,32 +74,53 @@ test('iOS fallback keeps the terminal marker within a UTF-8 byte budget', async 
   }
 });
 
+function workflowTestBash(platform = process.platform, env = process.env, exists = fs.existsSync) {
+  if (platform !== 'win32') return '/bin/bash';
+  const bash = path.win32.join(env.ProgramFiles || env.PROGRAMFILES || 'C:\\Program Files', 'Git', 'bin', 'bash.exe');
+  assert.ok(exists(bash), `Git Bash is required for the workflow shell test: ${bash}`);
+  return bash;
+}
+
+test('workflow shell uses installed Git Bash on Windows rather than a Unix or WSL path', () => {
+  const gitBash = 'C:\\Program Files\\Git\\bin\\bash.exe';
+  assert.equal(workflowTestBash('win32', { ProgramFiles: 'C:\\Program Files' }, candidate => candidate === gitBash), gitBash);
+  assert.throws(() => workflowTestBash('win32', {}, () => false), /Git Bash/);
+  assert.equal(workflowTestBash('linux'), '/bin/bash');
+  assert.equal(workflowTestBash('darwin'), '/bin/bash');
+});
+
 test('iOS workflow preserves exit 65 when diagnostic commands fail under errexit', () => {
   const { spawnSync } = require('node:child_process');
   const { tmpdir } = require('node:os');
-  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ios-beta.yml'), 'utf8');
-  const simulatorStep = workflow.split('      - name: Test iOS App on Simulator\n')[1]
-    .split('      - name: Verify Bundled Web Resources in App\n')[0];
-  const failureBlock = simulatorStep.slice(simulatorStep.indexOf('          if [ "$status" -ne 0 ]; then'))
-    .replace(/^          /gm, '');
-  assert.ok(failureBlock.startsWith('if [ "$status" -ne 0 ]; then'));
-  const temp = fs.mkdtempSync(path.join(tmpdir(), 'ios-failure-workflow-'));
-  try {
-    fs.writeFileSync(path.join(temp, 'xcrun'), '#!/bin/bash\nexit 1\n', { mode: 0o755 });
-    fs.writeFileSync(path.join(temp, 'node'), '#!/bin/bash\nprintf "mock XCTest diagnostic\\n"\nexit "$SUMMARY_STATUS"\n', { mode: 0o755 });
-    for (const summaryStatus of ['0', '1']) {
-      const run = spawnSync('/bin/bash', ['-c', `set -euo pipefail\nstatus=65\n${failureBlock}`], {
-        env: { ...process.env, PATH: temp, RUNNER_TEMP: temp, SUMMARY_STATUS: summaryStatus },
-        encoding: 'utf8',
-      });
-      assert.equal(run.error, undefined);
-      assert.equal(run.status, 65, `summarizer exit ${summaryStatus}: ${run.stdout}\n${run.stderr}`);
-      assert.match(run.stdout, /::error .*xcodebuild failed:/);
-      assert.match(run.stdout, /xcresult extraction failed/);
-      assert.match(run.stdout, summaryStatus === '0' ? /mock XCTest diagnostic/ : /summary unavailable/i);
+  const sourceWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ios-beta.yml'), 'utf8');
+  for (const workflow of [sourceWorkflow.replace(/\r\n/g, '\n'), sourceWorkflow.replace(/\r?\n/g, '\r\n')]) {
+    const simulatorStep = workflow.replace(/\r\n/g, '\n').split('      - name: Test iOS App on Simulator\n')[1]
+      .split('      - name: Verify Bundled Web Resources in App\n')[0];
+    const failureBlock = simulatorStep.slice(simulatorStep.indexOf('          if [ "$status" -ne 0 ]; then'))
+      .replace(/^          /gm, '');
+    assert.ok(failureBlock.startsWith('if [ "$status" -ne 0 ]; then'));
+    const temp = fs.mkdtempSync(path.join(tmpdir(), 'ios failure workflow '));
+    try {
+      // Shell functions avoid executable permission and Windows/MSYS path issues.
+      // Feed stdin rather than quoting a script or temporary path into -c.
+      const setup = 'set -euo pipefail\nstatus=65\nxcrun() { return 1; }\nnode() { printf "mock XCTest diagnostic\\n"; return "$SUMMARY_STATUS"; }\n';
+      for (const summaryStatus of ['0', '1']) {
+        const run = spawnSync(workflowTestBash(), ['--noprofile', '--norc', '-s'], {
+          input: setup + failureBlock,
+          cwd: temp,
+          env: { ...process.env, RUNNER_TEMP: '.', SUMMARY_STATUS: summaryStatus },
+          encoding: 'utf8',
+          timeout: 10000,
+        });
+        assert.equal(run.error, undefined);
+        assert.equal(run.status, 65, `summarizer exit ${summaryStatus}: ${run.stdout}\n${run.stderr}`);
+        assert.match(run.stdout, /::error .*xcodebuild failed:/);
+        assert.match(run.stdout, /xcresult extraction failed/);
+        assert.match(run.stdout, summaryStatus === '0' ? /mock XCTest diagnostic/ : /summary unavailable/i);
+      }
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
     }
-  } finally {
-    fs.rmSync(temp, { recursive: true, force: true });
   }
 });
 
