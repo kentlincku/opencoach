@@ -190,7 +190,7 @@ final class ScriptBridgeHandlerNavigationTests: XCTestCase {
     }
 
     private func postMessage(_ wv: WKWebView, id: String) async throws {
-        try await wv.evaluateJavaScript("""
+        try await wv.evaluateJavaScriptAllowingNil("""
         window.webkit.messageHandlers.voiceBridge.postMessage({
             id: '\(id)',
             operation: 'credential.has',
@@ -203,7 +203,7 @@ final class ScriptBridgeHandlerNavigationTests: XCTestCase {
 
     private func lastBridgeResult(_ wv: WKWebView) async -> [String: Any]? {
         for _ in 0..<50 {
-            if let v = try? await wv.evaluateJavaScript("window._lastBridgeResult") as? [String: Any] {
+            if let v = try? await wv.evaluateJavaScriptAllowingNil("window._lastBridgeResult") as? [String: Any] {
                 return v
             }
             try? await Task.sleep(nanoseconds: 100_000_000)

@@ -9,6 +9,23 @@ import AVFoundation
 @testable import VoicePracticeCore
 #endif
 
+// Older WebKit async overlays can trap when JavaScript returns undefined.
+// The callback API explicitly accepts nil; preserve it instead of unwrapping Any.
+extension WKWebView {
+    @MainActor
+    func evaluateJavaScriptAllowingNil(_ script: String) async throws -> Any? {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            evaluateJavaScript(script, completionHandler: { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: value)
+                }
+            })
+        }
+    }
+}
+
 @MainActor
 final class ScriptBridgeHandlerTests: XCTestCase {
     var webView: WKWebView!
@@ -84,16 +101,16 @@ final class ScriptBridgeHandlerTests: XCTestCase {
             if coordinator.handler?.acceptsBridgeMessages == true { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        // WebKit may enable its recognizer internally; validate the effective zoom
-        // range and delegated zoom target, rather than that transient flag.
+        // WebKit's internal min/max range differs by OS version even when zoom
+        // is disabled. Verify the effective scale, delegate and viewport policy.
         XCTAssertNil(view.scrollView.delegate?.viewForZooming?(in: view.scrollView))
-        XCTAssertEqual(view.scrollView.minimumZoomScale, view.scrollView.maximumZoomScale, accuracy: 0.001)
+        XCTAssertEqual(view.scrollView.zoomScale, 1, accuracy: 0.001)
         XCTAssertFalse(view.configuration.ignoresViewportScaleLimits)
-        let viewport = try await view.evaluateJavaScript("document.querySelector('meta[name=viewport]').content") as? String
+        let viewport = try await view.evaluateJavaScriptAllowingNil("document.querySelector('meta[name=viewport]').content") as? String
         XCTAssertTrue(viewport?.contains("user-scalable=no") == true)
-        let initialScale = try await view.evaluateJavaScript("visualViewport.scale") as? Double
+        let initialScale = try await view.evaluateJavaScriptAllowingNil("visualViewport.scale") as? Double
         XCTAssertEqual(initialScale, 1)
-        let native = try await view.evaluateJavaScript("window.voiceNativeBridge.nativeSpeech") as? Bool
+        let native = try await view.evaluateJavaScriptAllowingNil("window.voiceNativeBridge.nativeSpeech") as? Bool
         XCTAssertEqual(native, true)
         let rawList: Any? = try await withCheckedThrowingContinuation { continuation in
             view.callAsyncJavaScript("await openSettingsModal(); return await window.voiceNativeBridge.listSpeechVoices();", arguments: [:], in: nil, in: .page) { result in
@@ -102,14 +119,14 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         }
         let list = rawList as? [String: Any]
         XCTAssertNotNil(list?["voices"])
-        let fontSize = try await view.evaluateJavaScript("getComputedStyle(document.getElementById('apiBaseUrl')).fontSize") as? String
+        let fontSize = try await view.evaluateJavaScriptAllowingNil("getComputedStyle(document.getElementById('apiBaseUrl')).fontSize") as? String
         XCTAssertEqual(fontSize, "16px")
-        _ = try await view.evaluateJavaScript("document.getElementById('apiBaseUrl').focus();")
+        _ = try await view.evaluateJavaScriptAllowingNil("document.getElementById('apiBaseUrl').focus();")
         try await Task.sleep(nanoseconds: 300_000_000)
-        let focusedScale = try await view.evaluateJavaScript("visualViewport.scale") as? Double
+        let focusedScale = try await view.evaluateJavaScriptAllowingNil("visualViewport.scale") as? Double
         XCTAssertEqual(focusedScale, 1)
-        _ = try await view.evaluateJavaScript("document.activeElement.blur();")
-        let overflow = try await view.evaluateJavaScript("document.documentElement.scrollWidth > window.innerWidth") as? Bool
+        _ = try await view.evaluateJavaScriptAllowingNil("document.activeElement.blur();")
+        let overflow = try await view.evaluateJavaScriptAllowingNil("document.documentElement.scrollWidth > window.innerWidth") as? Bool
         XCTAssertEqual(overflow, false)
         for (name, script) in [
             ("settings", "document.getElementById('nativeSpeechSettings').scrollIntoView({block:'center'});"),
@@ -118,9 +135,9 @@ final class ScriptBridgeHandlerTests: XCTestCase {
             ("coaches", "openCoachModal();"),
             ("library", "closeCoachModal(); openLessonManager();")
         ] {
-            _ = try await view.evaluateJavaScript(script)
+            _ = try await view.evaluateJavaScriptAllowingNil(script)
             try await Task.sleep(nanoseconds: 300_000_000)
-            let overflow = try await view.evaluateJavaScript("document.documentElement.scrollWidth > innerWidth") as? Bool
+            let overflow = try await view.evaluateJavaScriptAllowingNil("document.documentElement.scrollWidth > innerWidth") as? Bool
             XCTAssertEqual(overflow, false, name)
             let image = try await view.takeSnapshot(configuration: nil)
             let attachment = XCTAttachment(image: image)
@@ -130,6 +147,23 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         }
     }
     #endif
+
+    func testOptionalJavaScriptResultsAndErrors() async throws {
+        let view = WKWebView(frame: .zero)
+        webView = view
+        let undefined = try await view.evaluateJavaScriptAllowingNil("undefined")
+        XCTAssertNil(undefined)
+        let null = try await view.evaluateJavaScriptAllowingNil("null")
+        XCTAssertTrue(null == nil || null is NSNull)
+        let value = try await view.evaluateJavaScriptAllowingNil("7")
+        XCTAssertEqual(value as? Int, 7)
+        do {
+            _ = try await view.evaluateJavaScriptAllowingNil("throw new Error('expected-test-error')")
+            XCTFail("JavaScript exceptions must still throw")
+        } catch {
+            XCTAssertEqual((error as NSError).domain, "WKErrorDomain")
+        }
+    }
 
     override func setUp() async throws {
         try await super.setUp()
@@ -174,9 +208,9 @@ final class ScriptBridgeHandlerTests: XCTestCase {
     private func waitForBridgeResult(_ wv: WKWebView) async throws -> [String: Any]? {
         for _ in 0..<50 {
             try await Task.sleep(nanoseconds: 100_000_000)
-            if let hasResult = try? await wv.evaluateJavaScript("window.bridgeResult !== null") as? Bool,
+            if let hasResult = try? await wv.evaluateJavaScriptAllowingNil("window.bridgeResult !== null") as? Bool,
                hasResult {
-                return try? await wv.evaluateJavaScript("window.bridgeResult") as? [String: Any]
+                return try? await wv.evaluateJavaScriptAllowingNil("window.bridgeResult") as? [String: Any]
             }
         }
         return nil
@@ -217,7 +251,7 @@ final class ScriptBridgeHandlerTests: XCTestCase {
             baseUrl: 'https://api.openai.com/v1'
         });
         """
-        try await wv.evaluateJavaScript(jsPost + "; true;")
+        try await wv.evaluateJavaScriptAllowingNil(jsPost + "; true;")
         let result = try await waitForBridgeResult(wv)
 
         XCTAssertNotNil(result, "Callback must populate window.bridgeResult")
@@ -329,7 +363,7 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         });
         true;
         """
-        try await wv.evaluateJavaScript(jsPost)
+        try await wv.evaluateJavaScriptAllowingNil(jsPost)
 
         // Advance document generation simulating leaving page1
         coordinator.advanceDocumentGeneration()
@@ -368,7 +402,7 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         let initialGeneration = handler.documentGeneration
 
         // Generation 1 sends message
-        try await wv.evaluateJavaScript("""
+        try await wv.evaluateJavaScriptAllowingNil("""
         window.webkit.messageHandlers.voiceBridge.postMessage({
             id: 'gen1_call',
             operation: 'credential.has',
@@ -393,7 +427,7 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         XCTAssertTrue(handler.acceptsBridgeMessages)
 
         // Now the committed document sends a message on the same URL
-        try await wv.evaluateJavaScript("""
+        try await wv.evaluateJavaScriptAllowingNil("""
         window.webkit.messageHandlers.voiceBridge.postMessage({
             id: 'gen2_call',
             operation: 'credential.has',
@@ -435,7 +469,7 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         try await loadHtmlAndWait(wv, url: tempHtml, coordinator: coordinator)
 
         let complexId = "id_special_\"'_\n_\u{2028}_123"
-        try await wv.evaluateJavaScript("""
+        try await wv.evaluateJavaScriptAllowingNil("""
         window.webkit.messageHandlers.voiceBridge.postMessage({
             id: "id_special_\\"'_\\n_\\u2028_123",
             operation: 'credential.has',
@@ -481,7 +515,7 @@ final class ScriptBridgeHandlerTests: XCTestCase {
 
         try await loadHtmlAndWait(wv, url: tempHtml, coordinator: coordinator)
 
-        try await wv.evaluateJavaScript("""
+        try await wv.evaluateJavaScriptAllowingNil("""
         window.webkit.messageHandlers.voiceBridge.postMessage({
             id: 'err_test',
             operation: 'unknown.op'
