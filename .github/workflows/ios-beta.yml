@@ -66,15 +66,18 @@ jobs:
           xcrun simctl bootstatus "$DEVICE_ID" -b
           echo "Testing on Simulator device UDID: $DEVICE_ID"
           set +e
-          xcodebuild -project apps/ios/VoicePractice.xcodeproj -scheme VoicePractice -destination "id=$DEVICE_ID" test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/opencoach-xcodebuild.log"
+          xcodebuild -project apps/ios/VoicePractice.xcodeproj -scheme VoicePractice -destination "id=$DEVICE_ID" test -resultBundlePath "$RUNNER_TEMP/opencoach-ios.xcresult" CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/opencoach-xcodebuild.log"
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
-            set +e
-            output=$(grep -E '(^|[[:space:]])(error:|fatal error:)|Testing failed|Test Suite.*failed' "$RUNNER_TEMP/opencoach-xcodebuild.log" | tail -n 80)
-            set -e
-            output+=$'\n--- tail ---\n'
-            output+=$(tail -n 100 "$RUNNER_TEMP/opencoach-xcodebuild.log")
+            # This runner uses Xcode 15's xcresulttool JSON interface. Extraction
+            # may fail if the runner crashed before creating a result bundle.
+            if ! xcrun xcresulttool get --path "$RUNNER_TEMP/opencoach-ios.xcresult" --format json > "$RUNNER_TEMP/opencoach-ios-result.json" 2> "$RUNNER_TEMP/opencoach-ios-result-error.log"; then
+              printf '%s\n' 'xcresult extraction failed; preserving xcodebuild failure and summarizing its log.'
+            fi
+            if ! output=$(node scripts/summarize-ios-test-failure.mjs "$RUNNER_TEMP/opencoach-xcodebuild.log" "$RUNNER_TEMP/opencoach-ios-result.json"); then
+              output='iOS test failure summary unavailable; inspect the xcodebuild log. Preserving original xcodebuild exit status.'
+            fi
             escaped=${output//'%'/'%25'}
             escaped=${escaped//$'\r'/'%0D'}
             escaped=${escaped//$'\n'/'%0A'}
