@@ -494,7 +494,12 @@
             cursor: not-allowed;
         }
 
+        .lesson-item { gap: 12px; }
+        .lesson-item > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+        .lesson-item > div:last-child { flex-shrink: 0; }
+
         .lesson-badge {
+            white-space: nowrap;
             font-size: 11px;
             font-weight: 700;
             padding: 2px 8px;
@@ -778,6 +783,20 @@
                 border-radius: 18px;
             }
         }
+        .msg-bubble, .form-group small, #nativeSpeechHint, #nativeVoiceModelsStatus { overflow-wrap: anywhere; }
+        .modal-header h2 { min-width: 0; }
+        button { color: inherit; }
+        .close-btn { flex-shrink: 0; min-width: 44px; min-height: 44px; }
+        .native-ios-app input, .native-ios-app textarea, .native-ios-app select { font-size: 16px !important; }
+        .native-ios-app button, .native-ios-app .icon-btn { touch-action: manipulation; min-height: 44px; }
+        @media (max-width: 480px) {
+            .modal-overlay { padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+            .modal-card { padding: 16px; border-radius: 18px; max-height: calc(100dvh - 16px); }
+            .close-btn { min-width: 44px; min-height: 44px; }
+            .form-input { font-size: 16px; }
+            .chat-box { height: clamp(220px, 34dvh, 300px); }
+            .coach-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
     </style>
 </head>
 <body>
@@ -794,7 +813,7 @@
                 <span class="status-dot" id="headerConnDot" style="background: #F59E0B;"></span>
                 <span id="headerConnText" style="font-size: 12px; font-weight: 700; color: #475569;">🟡 OpenAI-compatible API: 尚未設定模型</span>
             </div>
-            <button class="icon-btn" onclick="openSettingsModal()">⚙️ 設定大腦 AI 模型</button>
+            <button class="icon-btn" onclick="openSettingsModal()">⚙️ 設定</button>
         </div>
     </header>
 
@@ -847,16 +866,16 @@
                         <button class="btn btn-start" style="padding: 10px 18px; flex: 0 0 auto;" onclick="sendManualText()">➤ 發送</button>
                     </div>
                     <div id="micNotice" style="font-size: 11.5px; color: #94A3B8; margin-top: 6px; text-align: center;">
-                        🎙️ 語音辨識使用中（若瀏覽器提示請點擊「允許麥克風」）
+                        🎙️ 按下開始後才會使用麥克風；也可以直接輸入英文。
                     </div>
                     <div id="kokoroDebugLog" style="display: none; font-size: 11.5px; color: #8338EC; background: #F3E8FF; padding: 4px 8px; border-radius: 6px; margin-top: 6px; text-align: center;"></div>
                 </div>
 
                 <!-- Pronunciation Shadowing Box -->
                 <div class="card">
-                    <h3 style="font-size: 15px; margin-bottom: 6px;">🎯 發音跟讀評分 (Shadowing Coach)</h3>
+                    <h3 style="font-size: 15px; margin-bottom: 6px;">🎯 跟讀練習</h3>
                     <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
-                        點擊按鈕跟讀教練上一句話，AI 將即時分析你的發音完整度！
+                        跟讀教練上一句話，比較辨識文字與原句的相符程度；此分數不代表口音或音素評分。
                     </p>
                     <button class="btn btn-shadow" onclick="startShadowing()">🎙️ 跟讀上一句並評分</button>
                     <div id="shadowResultBox" class="shadow-result-box" style="display: none;"></div>
@@ -933,7 +952,7 @@
 <div class="modal-overlay" id="coachModal" onclick="if(event.target===this) closeCoachModal()">
     <div class="modal-card">
         <div class="modal-header">
-            <h2>🎭 選擇你喜歡的英語教練 (8位)</h2>
+            <h2>🎭 選擇英語教練</h2>
             <button class="close-btn" onclick="closeCoachModal()" title="關閉">&times;</button>
         </div>
         <div class="coach-grid" id="coachGrid"></div>
@@ -945,7 +964,7 @@
 <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this) closeSettingsModal()">
     <div class="modal-card">
         <div class="modal-header">
-            <h2>⚙️ 大腦 API 連線設定 (LLM Settings)</h2>
+            <h2>⚙️ 語音與 AI 設定</h2>
             <button class="close-btn" onclick="closeSettingsModal()" title="關閉">&times;</button>
         </div>
         <div class="form-group">
@@ -1024,6 +1043,19 @@
                 <option value="system">🖥️ 系統語音（本機）</option>
                 <option id="kokoroTtsOption" value="kokoro">🎙️ Kokoro（下載後本機執行）</option>
             </select>
+            <div id="nativeSpeechSettings" hidden style="margin-top:12px;">
+                <label for="nativeSpeechVoice">iPhone 英文聲音</label>
+                <select id="nativeSpeechVoice" class="form-input"><option value="">自動選擇最佳可用聲音</option></select>
+                <label for="nativeSpeechRate" style="margin-top:10px;">朗讀速度</label>
+                <select id="nativeSpeechRate" class="form-input">
+                    <option value="0.8">慢速（0.8×）</option><option value="1" selected>正常（1×）</option><option value="1.2">快速（1.2×）</option>
+                </select>
+                <div class="settings-action-row" style="margin-top:10px;">
+                    <button type="button" class="btn btn-start" onclick="previewNativeSpeech()">▶ 試聽聲音</button>
+                    <button type="button" class="btn" onclick="stopNativeSpeechPreview()">⏹ 停止試聽</button>
+                </div>
+                <p id="nativeSpeechHint" role="status" aria-live="polite" style="font-size:13px; line-height:1.6; margin-top:8px;"></p>
+            </div>
             <small id="ttsModeHint" style="display:block; color:#92400E; font-weight:600; margin-top:6px;">Kokoro 在 Web 首次使用需下載模型；若模型不可用，會安全退回系統語音。</small>
         </div>
         <div class="settings-action-row" style="gap: 10px; margin-top: 12px;">
@@ -1129,6 +1161,7 @@ let currentVoiceId = "af_heart";
 let currentMode = "free"; // "free" | "lesson"
 let currentLessonId = null;
 let isRunning = false;
+let shadowingInProgress = false;
 const ENGLISH_COACH_SYSTEM_PROMPT = "You are a friendly, encouraging English conversation coach. Respond only in natural English, even if the student speaks another language. Never output Chinese, Japanese, Korean, CJK characters, translations, or language labels. Keep every response concise (1-3 sentences), natural, and engaging.";
 let messages = [{ role: "system", content: ENGLISH_COACH_SYSTEM_PROMPT }];
 let voiceRuntime = null;
@@ -1654,6 +1687,7 @@ let browserKokoroUsable = false;
 let currentAudioObj = null;
 let currentPlaybackResolve = null;
 let voicePlaybackToken = 0;
+let nativeSpeechPreviewToken = null;
 
 function isKokoroInitializationCurrent(generation) {
     return kokoroModeEpoch.isCurrent(generation)
@@ -1890,6 +1924,9 @@ function stopCurrentVoicePlayback() {
         } catch(e) {}
         currentAudioObj = null;
     }
+    if (window.voiceNativeBridge?.nativeSpeech === true) {
+        window.voiceNativeBridge.stopSpeech().catch(() => {});
+    }
     if (typeof window !== "undefined" && window.speechSynthesis) {
         try { window.speechSynthesis.cancel(); } catch(e) {}
     }
@@ -1947,7 +1984,78 @@ function playAudioSource(src, token, onStartCallback, cleanup = null) {
     });
 }
 
+async function refreshNativeSpeechSettings() {
+    if (window.voiceNativeBridge?.nativeSpeech !== true) return;
+    document.getElementById("nativeSpeechSettings").hidden = false;
+    const hint = document.getElementById("nativeSpeechHint");
+    const select = document.getElementById("nativeSpeechVoice");
+    hint.textContent = "正在讀取裝置聲音…";
+    try {
+        const result = await window.voiceNativeBridge.listSpeechVoices();
+        select.replaceChildren(new Option("自動選擇最佳可用聲音", ""));
+        const quality = { premium: "高品質", enhanced: "增強", default: "標準" };
+        for (const voice of result.voices) {
+            select.add(new Option(`${voice.name} · ${voice.language} · ${quality[voice.quality] || "標準"}`, voice.id));
+        }
+        const saved = localStorage.getItem("vp_nativeSpeechVoice") || "";
+        select.value = result.voices.some(v => v.id === saved) ? saved : "";
+        document.getElementById("nativeSpeechRate").value = localStorage.getItem("vp_nativeSpeechRate") || "1";
+        const upgraded = result.voices.some(v => v.quality !== "default");
+        hint.textContent = (upgraded ? "已找到增強／高品質聲音，將優先選用。" : "目前只有標準聲音。") +
+            "可到 iPhone「設定」搜尋「朗讀內容」，在聲音選項下載英文增強或高品質聲音，再重新開啟此設定頁。朗讀在裝置上執行；教練角色與聲音可分別選擇。";
+        if (!result.voices.length) hint.textContent = "尚未找到英文聲音，請先在 iPhone 設定下載英文聲音。";
+    } catch {
+        hint.textContent = "無法讀取裝置聲音，請關閉設定後重新開啟。";
+    }
+}
+
+async function playNativeSpeech(text, token, onStartCallback, preview = false) {
+    if (token !== voicePlaybackToken) return false;
+    const voiceId = preview ? document.getElementById("nativeSpeechVoice").value : (localStorage.getItem("vp_nativeSpeechVoice") || "");
+    const rate = Number(preview ? document.getElementById("nativeSpeechRate").value : (localStorage.getItem("vp_nativeSpeechRate") || "1"));
+    setTTSEngineStatus("Apple 裝置語音準備中…", "#64748B");
+    try {
+        const result = await window.voiceNativeBridge.speak({ text, voiceId, rate, language: "en-US" }, info => {
+            if (token !== voicePlaybackToken) return;
+            setTTSEngineStatus(`Apple 裝置語音：${info.voiceName}`, "#047857");
+            if (typeof onStartCallback === "function") onStartCallback();
+            updateCoachUI("speaking");
+        });
+        return token === voicePlaybackToken && result.finished === true;
+    } catch (error) {
+        if (token === voicePlaybackToken && !String(error.message).includes("SPEECH_CANCELLED")) {
+            setTTSEngineStatus("無法播放裝置聲音，請在設定中重新選擇英文聲音", "#DC2626");
+        }
+        return false;
+    }
+}
+
+async function previewNativeSpeech() {
+    if (shadowingInProgress) {
+        document.getElementById("nativeSpeechHint").textContent = "跟讀練習進行中（含麥克風授權與評分），請等完成後再試聽聲音。";
+        return;
+    }
+    if (isRunning) stopConversation();
+    stopCurrentVoicePlayback();
+    const token = voicePlaybackToken;
+    nativeSpeechPreviewToken = token;
+    await playNativeSpeech("Hello! Let's practice English together, one sentence at a time.", token, null, true);
+    if (nativeSpeechPreviewToken === token) {
+        nativeSpeechPreviewToken = null;
+        if (token === voicePlaybackToken) updateCoachUI("idle");
+    }
+}
+
+function stopNativeSpeechPreview() {
+    const token = nativeSpeechPreviewToken;
+    nativeSpeechPreviewToken = null;
+    if (token === null || token !== voicePlaybackToken) return;
+    stopCurrentVoicePlayback();
+    updateCoachUI("idle");
+}
+
 function playFallbackWebSpeech(cleanText, token, onStartCallback, statusLabel = "系統語音") {
+    if (window.voiceNativeBridge?.nativeSpeech === true) return playNativeSpeech(cleanText, token, onStartCallback);
     return new Promise(resolve => {
         if (!window.speechSynthesis || token !== voicePlaybackToken) return resolve(false);
         let settled = false;
@@ -2136,6 +2244,7 @@ function renderShadowingResult(resultBox, target, spoken) {
 }
 
 async function startShadowing() {
+    if (shadowingInProgress) return;
     const lastAssistantMsg = [...messages].reverse().find(m => m.role === "assistant");
     if (!lastAssistantMsg) {
         alert("請先開始對話後再跟讀練習唷！");
@@ -2148,6 +2257,7 @@ async function startShadowing() {
 
     let stream = null;
     try {
+        shadowingInProgress = true;
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const chunks = [];
         const mimeType = getSupportedRecordingMimeType();
@@ -2172,7 +2282,11 @@ async function startShadowing() {
         console.warn("Local shadowing assessment failed:", error);
         resultBox.textContent = "💡 本機語音評分失敗，請確認麥克風權限與 Whisper 模型。";
     } finally {
-        stream?.getTracks().forEach(track => track.stop());
+        try {
+            stream?.getTracks().forEach(track => track.stop());
+        } finally {
+            shadowingInProgress = false;
+        }
     }
 }
 
@@ -2962,6 +3076,16 @@ function updateLocalEndpointNotice(baseUrl) {
     const access = browserEndpointAccess(baseUrl);
     const isLanHttp = access.mode === "hosted-lan" || access.mode === "local-web-lan";
     notice.textContent = access.message;
+    if ((window.voiceNativeBridge?.appleFoundationModels === true || window.voiceNativeBridge?.nativeSpeech === true) && baseUrl) {
+        try {
+            const endpoint = new URL(baseUrl);
+            notice.textContent = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+                ? "這個網址指向 iPhone 自己。連接 Mac 上的 AI，請填入 Mac 的區域網路 IP，或選擇 Apple Intelligence。"
+                : (endpoint.protocol === "http:"
+                    ? "透過 iPhone 連接此端點。HTTP 沒有加密，只適合受信任的區域網路；公網 HTTP 會被原生安全政策拒絕。"
+                    : "透過 iPhone 安全連接此端點；金鑰保存在裝置 Keychain。");
+        } catch { notice.textContent = "請輸入完整端點網址，例如 https://api.example.com/v1。"; }
+    }
     notice.style.color = isLanHttp ? "#92400E" : (access.allowed ? "#047857" : "#B45309");
     notice.style.fontSize = isLanHttp ? "13px" : "11.5px";
     notice.style.fontWeight = isLanHttp ? "800" : "400";
@@ -3148,7 +3272,9 @@ async function loadProviderIntoForm(providerId, { preserveSavedUrl = false } = {
     const directPresetGroup = document.getElementById("directApiPresetGroup");
     directPresetGroup.style.display = providerId === DIRECT_API_PROVIDER_ID ? "block" : "none";
     if (providerId === DIRECT_API_PROVIDER_ID) {
-        document.getElementById("directApiPreset").value = directApiPresetIdForBaseUrl(baseUrl);
+        const presetId = directApiPresetIdForBaseUrl(baseUrl);
+        const isIosNative = window.voiceNativeBridge?.appleFoundationModels === true || window.voiceNativeBridge?.nativeSpeech === true;
+        document.getElementById("directApiPreset").value = isIosNative && presetId === "omlx" ? "custom" : presetId;
     }
     document.getElementById("modelGroup").style.display = isAppleFoundationModel ? "none" : "block";
     document.getElementById("appleIntelligenceStatus").style.display = isAppleFoundationModel ? "block" : "none";
@@ -3237,9 +3363,19 @@ async function openSettingsModal() {
         : (PROVIDERS_CONFIG[storedProvider] ? storedProvider : DIRECT_API_PROVIDER_ID);
     document.getElementById("providerSelect").value = PROVIDERS_CONFIG[savedProvider] ? savedProvider : "";
     document.getElementById("ttsModeSelect").value = getTtsMode();
-    if (isIosBrowserEnvironment()) {
-        document.getElementById("ttsModeHint").textContent = "iPhone／iPad上的Kokoro.js目前有上游相容性問題，已改用裝置本機System Voice。";
+    if (window.voiceNativeBridge?.nativeSpeech === true) {
+        document.getElementById("ttsModeHint").textContent = "使用 Apple 原生語音，優先選用已下載的高品質英文聲音。";
+        document.getElementById("kokoroTtsOption").hidden = true;
         document.getElementById("kokoroTtsOption").disabled = true;
+        refreshNativeSpeechSettings();
+    } else if (isIosBrowserEnvironment()) {
+        document.getElementById("ttsModeHint").textContent = "iPhone／iPad 使用裝置系統語音，暫不提供 Kokoro。";
+        document.getElementById("kokoroTtsOption").disabled = true;
+    }
+    if (window.voiceNativeBridge?.appleFoundationModels === true || window.voiceNativeBridge?.nativeSpeech === true) {
+        for (const option of document.getElementById("directApiPreset").options) {
+            if (option.value === "omlx") { option.hidden = true; option.disabled = true; }
+        }
     }
     document.getElementById("settingsModal").style.display = "flex";
 
@@ -3503,6 +3639,10 @@ async function saveSettings() {
     else localStorage.setItem("vp_baseUrl", getProviderBaseUrl(providerId));
     localStorage.setItem("vp_model", model);
     localStorage.setItem("vp_ttsMode", ttsMode);
+    if (window.voiceNativeBridge?.nativeSpeech === true) {
+        localStorage.setItem("vp_nativeSpeechVoice", document.getElementById("nativeSpeechVoice").value);
+        localStorage.setItem("vp_nativeSpeechRate", document.getElementById("nativeSpeechRate").value);
+    }
     localStorage.removeItem("vp_enableBrowserKokoro");
     localStorage.removeItem("vp_verified_provider");
     if (voiceRuntime) voiceRuntime.cancel();
@@ -3513,7 +3653,7 @@ async function saveSettings() {
         if (ttsMode === "system") {
             setTTSEngineStatus("系統語音（使用者選擇）", "#F59E0B");
         } else if (voiceRuntime?.kind === "browser") {
-            setTTSEngineStatus("系統語音（Auto）", "#F59E0B");
+            setTTSEngineStatus(window.voiceNativeBridge?.nativeSpeech === true ? "Apple 裝置語音（Auto）" : "系統語音（Auto）", "#F59E0B");
         } else if (voiceRuntime?.kind === "electron") {
             voiceRuntime.capabilities().then(caps => {
                 if (caps?.ready && caps?.selectedTts) {
@@ -3559,6 +3699,7 @@ function updateHeaderStatusBadge() {
 }
 
 async function closeSettingsModal() {
+    if (window.voiceNativeBridge?.nativeSpeech === true) stopNativeSpeechPreview();
     invalidateModelDiscovery();
     if (subscriptionLoginState && hasDesktopSubscriptionBroker()) {
         try { await cancelSubscriptionLogin(); } catch {}
@@ -3571,6 +3712,7 @@ document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
         closeSettingsModal();
         closeCoachModal();
+        closeLessonManager();
     }
 });
 
@@ -3622,6 +3764,13 @@ async function migrateDesktopProviderCredentials() {
 
 async function initializeLocalFirstWeb() {
     const offlineStatus = document.getElementById("offlineStatus");
+    if (window.electronAPI || window.voiceNativeBridge) {
+        if (offlineStatus) {
+            offlineStatus.textContent = "✓ App 介面已內建";
+            offlineStatus.title = "介面可離線開啟；語音模型與 AI 連線狀態請查看設定。";
+        }
+        return;
+    }
     if (window.location.protocol !== "http:" && window.location.protocol !== "https:") {
         if (offlineStatus) offlineStatus.textContent = "⚠️ 請使用 HTTPS 安裝離線版";
         return;
@@ -3690,7 +3839,7 @@ async function initApp() {
     await createVoiceRuntime();
 
     // Browser models are lazy-loaded on the first explicit STT/TTS action.
-    if (window.location.protocol === "file:") {
+    if (window.location.protocol === "file:" && !window.electronAPI && !window.voiceNativeBridge) {
         const notice = document.getElementById("micNotice");
         if (notice) notice.textContent = "💡 注意：以本地檔案 (file://) 開啟時，瀏覽器安全政策會限制模型下載與快取；請使用 npm run start:web 並以 http://127.0.0.1:8765 開啟。";
     }
@@ -3712,6 +3861,7 @@ async function initApp() {
                 else idleTtsLabel = "Kokoro Native";
             }
         }
+        else if (window.voiceNativeBridge?.nativeSpeech === true) idleTtsLabel = "Apple 裝置語音（自動選擇最佳聲音）";
         else if (ttsMode === "system") idleTtsLabel = "系統語音（使用者選擇）";
         else if (voiceRuntime.kind === "browser") idleTtsLabel = "系統語音（Auto）";
         else if (useModelTts) idleTtsLabel = "System Voice (native unavailable)";

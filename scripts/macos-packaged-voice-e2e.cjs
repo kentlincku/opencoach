@@ -380,7 +380,7 @@ async function main() {
           }
         };
 
-        visibleButton('設定大腦 AI 模型', 'MISSING_VISIBLE_SETTINGS_TRIGGER').click();
+        visibleButton('設定', 'MISSING_VISIBLE_SETTINGS_TRIGGER').click();
         const settingsModal = document.getElementById('settingsModal');
         if (!isVisible(settingsModal)) throw new Error('SETTINGS_MODAL_NOT_VISIBLE');
 

@@ -1,6 +1,8 @@
 #if canImport(XCTest)
 import XCTest
+#if canImport(VoicePracticeCore)
 @testable import VoicePracticeCore
+#endif
 
 private actor StubAppleFoundationModelClient: AppleFoundationModelClient {
     var state: AppleFoundationModelAvailability
@@ -64,6 +66,53 @@ private actor ReusedRequestAppleFoundationModelClient: AppleFoundationModelClien
 private enum StubSessionError: Error { case failed }
 
 final class AppleFoundationModelServiceTests: XCTestCase {
+    func testSystemClientAvailabilityAndTwoTurnInferenceWhenReady() async throws {
+        #if os(iOS) && !targetEnvironment(simulator)
+        let service = AppleFoundationModelService()
+        let localeIdentifier = "en-US"
+        let availability = await service.availability(localeIdentifier: localeIdentifier)
+        print("APPLE_MODEL_DEVICE_AVAILABILITY=\(availability.code)")
+        guard availability.available else {
+            throw XCTSkip("System model unavailable: \(availability.code)")
+        }
+
+        let firstStartedAt = Date()
+        let first = try await service.chat(
+            requestID: "device-e2e-turn-1",
+            messages: [
+                ChatMessage(role: "system", content: "Use concise English."),
+                ChatMessage(role: "user", content: "Reply with one short sentence.")
+            ],
+            localeIdentifier: localeIdentifier,
+            maxTokens: 64
+        )
+        let firstLatencyMs = Int(Date().timeIntervalSince(firstStartedAt) * 1_000)
+
+        let secondStartedAt = Date()
+        let second = try await service.chat(
+            requestID: "device-e2e-turn-2",
+            messages: [
+                ChatMessage(role: "system", content: "Use concise English."),
+                ChatMessage(role: "user", content: "Reply with one short sentence."),
+                ChatMessage(role: "assistant", content: first.text),
+                ChatMessage(role: "user", content: "Reply with another short sentence.")
+            ],
+            localeIdentifier: localeIdentifier,
+            maxTokens: 64
+        )
+        let secondLatencyMs = Int(Date().timeIntervalSince(secondStartedAt) * 1_000)
+
+        XCTAssertEqual(first.contextVersion, AppleFoundationModelService.contextVersion)
+        XCTAssertEqual(second.contextVersion, AppleFoundationModelService.contextVersion)
+        XCTAssertFalse(first.text.isEmpty)
+        XCTAssertFalse(second.text.isEmpty)
+        print("APPLE_MODEL_DEVICE_TURN_1 latency_ms=\(firstLatencyMs) reply_characters=\(first.text.count)")
+        print("APPLE_MODEL_DEVICE_TURN_2 latency_ms=\(secondLatencyMs) reply_characters=\(second.text.count)")
+        #else
+        throw XCTSkip("Production Foundation Models inference requires a physical iOS device")
+        #endif
+    }
+
     func testAvailabilityStatesHaveStablePublicCodes() async {
         let cases: [(AppleFoundationModelAvailability, String)] = [
             (.available, "APPLE_MODEL_AVAILABLE"),

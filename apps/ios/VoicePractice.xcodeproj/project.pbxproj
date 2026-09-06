@@ -21,6 +21,7 @@
 		A100000F2C7F000100000001 /* ScriptBridgeHandlerNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000F2C7F000100000001 /* ScriptBridgeHandlerNavigationTests.swift */; };
 		A10000102C7F000100000001 /* AppleFoundationModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000102C7F000100000001 /* AppleFoundationModelService.swift */; };
 		A10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift */; };
+		A10000122C7F000100000001 /* NativeSpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000122C7F000100000001 /* NativeSpeechService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		B100000F2C7F000100000001 /* ScriptBridgeHandlerNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptBridgeHandlerNavigationTests.swift; sourceTree = "<group>"; };
 		B10000102C7F000100000001 /* AppleFoundationModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelService.swift; sourceTree = "<group>"; };
 		B10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelServiceTests.swift; sourceTree = "<group>"; };
+		B10000122C7F000100000001 /* NativeSpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSpeechService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,6 +107,7 @@
 				B10000012C7F000100000001 /* VoicePracticeApp.swift */,
 				B10000022C7F000100000001 /* ContentView.swift */,
 				B100000C2C7F000100000001 /* ScriptBridgeHandler.swift */,
+				B10000122C7F000100000001 /* NativeSpeechService.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -238,6 +241,7 @@
 				A10000012C7F000100000001 /* VoicePracticeApp.swift in Sources */,
 				A10000022C7F000100000001 /* ContentView.swift in Sources */,
 				A100000C2C7F000100000001 /* ScriptBridgeHandler.swift in Sources */,
+				A10000122C7F000100000001 /* NativeSpeechService.swift in Sources */,
 				A10000032C7F000100000001 /* LocalModelClient.swift in Sources */,
 				A10000042C7F000100000001 /* VoiceWebBridge.swift in Sources */,
 				A10000052C7F000100000001 /* KeychainStore.swift in Sources */,
@@ -250,11 +254,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000022C7F000100000001 /* ContentView.swift in Sources */,
 				A10000062C7F000100000001 /* LocalModelClientTests.swift in Sources */,
 				A10000072C7F000100000001 /* VoiceWebBridgeTests.swift in Sources */,
 				A100000D2C7F000100000001 /* ScriptBridgeHandlerTests.swift in Sources */,
 				A100000F2C7F000100000001 /* ScriptBridgeHandlerNavigationTests.swift in Sources */,
 				A100000C2C7F000100000001 /* ScriptBridgeHandler.swift in Sources */,
+				A10000122C7F000100000001 /* NativeSpeechService.swift in Sources */,
 				A10000032C7F000100000001 /* LocalModelClient.swift in Sources */,
 				A10000042C7F000100000001 /* VoiceWebBridge.swift in Sources */,
 				A10000052C7F000100000001 /* KeychainStore.swift in Sources */,

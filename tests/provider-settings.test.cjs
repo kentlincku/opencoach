@@ -8,6 +8,10 @@ const directApiPresets = require('../apps/web/runtime/direct-api-presets.js');
 const localEndpointPolicy = require('../apps/web/runtime/local-endpoint-policy.js');
 
 const html = fs.readFileSync(path.join(__dirname, '../apps/web/index.html'), 'utf8');
+const stopPreviewSource = html.slice(
+  html.indexOf('function stopNativeSpeechPreview('),
+  html.indexOf('function playFallbackWebSpeech('),
+);
 const transcriptionSource = html.slice(
   html.indexOf('async function transcribeBrowserAudio'),
   html.indexOf('async function handleLLMResponse'),
@@ -122,6 +126,11 @@ function createHarness({ storage = {}, fetchImpl = async () => { throw new Error
     fetch: async (...args) => { fetchCalls += 1; fetchRequests.push(args); return fetchImpl(...args); },
     isIosBrowserEnvironment: () => false,
     getTtsMode: () => 'auto',
+    refreshNativeSpeechSettings() { elements.nativeSpeechRefreshed = true; },
+    nativeSpeechPreviewToken: null,
+    voicePlaybackToken: 1,
+    updateCoachUI(state) { elements.coachState = state; },
+    stopCurrentVoicePlayback() { elements.nativeSpeechStopped = true; },
     localStorage,
     sessionStorage,
     URL,
@@ -129,9 +138,54 @@ function createHarness({ storage = {}, fetchImpl = async () => { throw new Error
     setTimeout: timerImpl,
     window: windowObject,
   });
-  vm.runInContext(`${transcriptionSource}\n${settingsSource}\n${migrationSource}\nthis.__settings = { removeRetiredOAuthState, migrateLegacyDirectProviderSettings, migrateDesktopProviderCredentials, migrateProviderSettingsForEnvironment: typeof migrateProviderSettingsForEnvironment === 'function' ? migrateProviderSettingsForEnvironment : null, applyLlmProviderCapabilities: typeof applyLlmProviderCapabilities === 'function' ? applyLlmProviderCapabilities : null, refreshLlmProviderCapabilities: typeof refreshLlmProviderCapabilities === 'function' ? refreshLlmProviderCapabilities : null, beginSubscriptionLogin: typeof beginSubscriptionLogin === 'function' ? beginSubscriptionLogin : null, pollSubscriptionLogin: typeof pollSubscriptionLogin === 'function' ? pollSubscriptionLogin : null, logoutSubscription: typeof logoutSubscription === 'function' ? logoutSubscription : null, populateModelSelect, applyDirectApiPreset, directApiPresetIdForBaseUrl, onApiBaseUrlInput, updateActiveLanHttpWarning, fetchModelsFromProvider, debouncedFetchModels, openSettingsModal, closeSettingsModal, onProviderSelectChange, onManualModelInput, requestProviderChat, transcribeBrowserAudio, getProviderModel, getProviderApiKey, setProviderApiKey };`, context);
+  vm.runInContext(`${stopPreviewSource}\n${transcriptionSource}\n${settingsSource}\n${migrationSource}\nthis.__settings = { removeRetiredOAuthState, migrateLegacyDirectProviderSettings, migrateDesktopProviderCredentials, migrateProviderSettingsForEnvironment: typeof migrateProviderSettingsForEnvironment === 'function' ? migrateProviderSettingsForEnvironment : null, applyLlmProviderCapabilities: typeof applyLlmProviderCapabilities === 'function' ? applyLlmProviderCapabilities : null, refreshLlmProviderCapabilities: typeof refreshLlmProviderCapabilities === 'function' ? refreshLlmProviderCapabilities : null, beginSubscriptionLogin: typeof beginSubscriptionLogin === 'function' ? beginSubscriptionLogin : null, pollSubscriptionLogin: typeof pollSubscriptionLogin === 'function' ? pollSubscriptionLogin : null, logoutSubscription: typeof logoutSubscription === 'function' ? logoutSubscription : null, populateModelSelect, applyDirectApiPreset, directApiPresetIdForBaseUrl, onApiBaseUrlInput, updateActiveLanHttpWarning, fetchModelsFromProvider, debouncedFetchModels, openSettingsModal, closeSettingsModal, onProviderSelectChange, onManualModelInput, requestProviderChat, transcribeBrowserAudio, getProviderModel, getProviderApiKey, setProviderApiKey };`, context);
   return { api: context.__settings, elements, localStorage, sessionStorage, warnings, fetchRequests, get fetchCalls() { return fetchCalls; }, get replacedUrl() { return replacedUrl; } };
 }
+
+test('iOS speech settings preserve blocked selection and do not connect implicitly', async () => {
+  const harness = createHarness({
+    storage: { vp_provider: 'chatgpt-subscription' },
+    voiceNativeBridge: { appleFoundationModels: true, nativeSpeech: true,
+      providerOperation: async () => { throw new Error('must not connect'); } },
+  });
+  harness.elements.directApiPreset.options = [{ value: 'omlx' }, { value: 'custom' }];
+  await harness.api.openSettingsModal();
+  assert.equal(harness.localStorage.getItem('vp_provider'), 'chatgpt-subscription');
+  assert.equal(harness.elements.providerSelect.value, 'chatgpt-subscription');
+  assert.match(harness.elements.modelDetectNotice.textContent, /阻止自動連線/);
+  assert.equal(harness.elements.nativeSpeechRefreshed, true);
+  assert.equal(harness.elements.kokoroTtsOption.disabled, true);
+  assert.equal(harness.elements.directApiPreset.options[0].hidden, true);
+  assert.equal(harness.fetchCalls, 0);
+  await harness.api.closeSettingsModal();
+  assert.equal(harness.elements.nativeSpeechStopped, undefined, 'closing settings without a preview must not stop conversation playback');
+});
+
+test('iPhone endpoint help and oMLX preset use actual iOS capabilities', async () => {
+  const harness = createHarness({
+    storage: { vp_provider: 'openai-compatible', vp_provider_urls: JSON.stringify({ 'openai-compatible': 'http://127.0.0.1:8000/v1' }) },
+    voiceNativeBridge: { appleFoundationModels: true, providerOperation: async () => ({ models: ['local-model'] }) },
+  });
+  await harness.api.openSettingsModal();
+  assert.equal(harness.elements.directApiPreset.value, 'custom');
+  assert.match(harness.elements.localEndpointNotice.textContent, /iPhone 自己/);
+  await harness.api.closeSettingsModal();
+});
+
+test('Android bridge does not acquire iPhone-only speech controls or endpoint copy', async () => {
+  const harness = createHarness({
+    storage: { vp_provider: 'openai-compatible', vp_provider_urls: JSON.stringify({ 'openai-compatible': 'http://127.0.0.1:8000/v1' }) },
+    voiceNativeBridge: { providerOperation: async () => ({ models: ['local-model'] }) },
+  });
+  harness.elements.directApiPreset.options = [{ value: 'omlx' }];
+  await harness.api.openSettingsModal();
+  assert.equal(harness.elements.nativeSpeechRefreshed, undefined);
+  assert.equal(harness.elements.directApiPreset.options[0].hidden, undefined);
+  assert.equal(harness.elements.directApiPreset.value, 'omlx');
+  assert.doesNotMatch(harness.elements.localEndpointNotice.textContent, /iPhone|Keychain/);
+  await harness.api.closeSettingsModal();
+  assert.equal(harness.elements.nativeSpeechStopped, undefined);
+});
 
 function deferredResponse(models) {
   let resolve;

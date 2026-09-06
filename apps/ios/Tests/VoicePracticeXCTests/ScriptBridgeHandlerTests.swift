@@ -1,6 +1,10 @@
 #if canImport(XCTest)
 import XCTest
 import WebKit
+#if canImport(UIKit)
+import UIKit
+import AVFoundation
+#endif
 #if canImport(VoicePracticeCore)
 @testable import VoicePracticeCore
 #endif
@@ -10,6 +14,122 @@ final class ScriptBridgeHandlerTests: XCTestCase {
     var webView: WKWebView!
     var bridge: VoiceWebBridge!
     var handler: ScriptBridgeHandler!
+
+    #if os(iOS) && !SWIFT_PACKAGE
+    func testNativeSpeechRejectsInvalidInputAndUnavailableVoice() throws {
+        for payload: [String: Any] in [
+            ["text": ""], ["text": String(repeating: "x", count: 12001)],
+            ["text": "Hello", "rate": true], ["text": "Hello", "rate": "fast"],
+            ["text": "Hello", "voiceId": 42], ["text": "Hello", "rate": 9.0], ["text": "Hello", "language": "fr-FR"],
+            ["text": "Hello", "unexpected": "value"], ["text": "Hello", "voiceId": "missing.voice"]
+        ] {
+            XCTAssertThrowsError(try NativeSpeechService.makeUtterance(payload))
+        }
+    }
+
+    func testNativeSpeechSelectsBestInstalledQualityAndFinishes() async throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Real speech output is verified on the physical iPhone")
+        #else
+        let voices = NativeSpeechService.englishVoices()
+        XCTAssertFalse(voices.isEmpty, "Install an English system voice on the device")
+        let value = try NativeSpeechService.makeUtterance(["text": "Hello. Let's practice English."])
+        XCTAssertEqual(value.voice?.quality, voices.first?.quality)
+        let service = NativeSpeechService()
+        defer { service.stop() }
+        var didStart = false
+        let result = try await service.speak(["text": "Hello. Let's practice English."]) { info in
+            didStart = true
+            print("NATIVE_SPEECH_STARTED latency_ms=\(info["startLatencyMs"] ?? 0) quality=\(info["quality"] ?? "unknown")")
+        }
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(result["finished"] as? Bool, true)
+        print("NATIVE_SPEECH_FINISHED=PASS voice_count=\(voices.count)")
+        #endif
+    }
+
+    func testNativeSpeechStopSettlesPendingUtterance() async throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Real speech cancellation is verified on the physical iPhone")
+        #else
+        let service = NativeSpeechService()
+        let operation = Task { try await service.speak(["text": String(repeating: "Practice English every day. ", count: 20)]) { _ in } }
+        try await Task.sleep(nanoseconds: 250_000_000)
+        service.stop()
+        do { _ = try await operation.value; XCTFail("Stopped speech must reject") }
+        catch { XCTAssertEqual(error.localizedDescription, "SPEECH_CANCELLED") }
+        #endif
+    }
+
+    func testProductionWebViewLocksScaleAndNativeVoiceSettings() async throws {
+        let container = WebViewContainer()
+        let coordinator = container.makeCoordinator()
+        let view = container.makeWebView(coordinator: coordinator)
+        webView = view
+        view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousKeyWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        window.frame = view.frame
+        let controller = UIViewController()
+        controller.view.addSubview(view)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            previousKeyWindow?.makeKeyAndVisible()
+            WebViewContainer.dismantleUIView(view, coordinator: coordinator)
+        }
+        for _ in 0..<100 {
+            if coordinator.handler?.acceptsBridgeMessages == true { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        // WebKit may enable its recognizer internally; validate the effective zoom
+        // range and delegated zoom target, rather than that transient flag.
+        XCTAssertNil(view.scrollView.delegate?.viewForZooming?(in: view.scrollView))
+        XCTAssertEqual(view.scrollView.minimumZoomScale, view.scrollView.maximumZoomScale, accuracy: 0.001)
+        XCTAssertFalse(view.configuration.ignoresViewportScaleLimits)
+        let viewport = try await view.evaluateJavaScript("document.querySelector('meta[name=viewport]').content") as? String
+        XCTAssertTrue(viewport?.contains("user-scalable=no") == true)
+        let initialScale = try await view.evaluateJavaScript("visualViewport.scale") as? Double
+        XCTAssertEqual(initialScale, 1)
+        let native = try await view.evaluateJavaScript("window.voiceNativeBridge.nativeSpeech") as? Bool
+        XCTAssertEqual(native, true)
+        let rawList: Any? = try await withCheckedThrowingContinuation { continuation in
+            view.callAsyncJavaScript("await openSettingsModal(); return await window.voiceNativeBridge.listSpeechVoices();", arguments: [:], in: nil, in: .page) { result in
+                continuation.resume(with: result)
+            }
+        }
+        let list = rawList as? [String: Any]
+        XCTAssertNotNil(list?["voices"])
+        let fontSize = try await view.evaluateJavaScript("getComputedStyle(document.getElementById('apiBaseUrl')).fontSize") as? String
+        XCTAssertEqual(fontSize, "16px")
+        _ = try await view.evaluateJavaScript("document.getElementById('apiBaseUrl').focus();")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let focusedScale = try await view.evaluateJavaScript("visualViewport.scale") as? Double
+        XCTAssertEqual(focusedScale, 1)
+        _ = try await view.evaluateJavaScript("document.activeElement.blur();")
+        let overflow = try await view.evaluateJavaScript("document.documentElement.scrollWidth > window.innerWidth") as? Bool
+        XCTAssertEqual(overflow, false)
+        for (name, script) in [
+            ("settings", "document.getElementById('nativeSpeechSettings').scrollIntoView({block:'center'});"),
+            ("chat", "closeSettingsModal(); switchTab('free');"),
+            ("lessons", "switchTab('lesson');"),
+            ("coaches", "openCoachModal();"),
+            ("library", "closeCoachModal(); openLessonManager();")
+        ] {
+            _ = try await view.evaluateJavaScript(script)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let overflow = try await view.evaluateJavaScript("document.documentElement.scrollWidth > innerWidth") as? Bool
+            XCTAssertEqual(overflow, false, name)
+            let image = try await view.takeSnapshot(configuration: nil)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "iPhone production \(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+    #endif
 
     override func setUp() async throws {
         try await super.setUp()

@@ -9,6 +9,15 @@ public class ScriptBridgeHandler: NSObject, WKScriptMessageHandler {
     public private(set) var acceptsBridgeMessages = false
     private var hasActiveNavigation = false
     private var activeNavigationToken: AnyObject?
+    // This file is also used by VoicePracticeCore through its existing symlink.
+    // SwiftPM does not include the UIKit application speech service.
+    #if os(iOS) && !SWIFT_PACKAGE
+    private var nativeSpeech: NativeSpeechService?
+
+    public func stopNativeSpeech() {
+        Task { @MainActor in self.nativeSpeech?.stop() }
+    }
+    #endif
 
     public init(bridge: any VoiceBridgeContract = VoiceWebBridge(), webView: WKWebView? = nil, trustedRootURL: URL? = nil) {
         self.bridge = bridge
@@ -21,6 +30,9 @@ public class ScriptBridgeHandler: NSObject, WKScriptMessageHandler {
     }
 
     public func beginMainFrameNavigation(navigationToken: AnyObject? = nil) {
+        #if os(iOS) && !SWIFT_PACKAGE
+        stopNativeSpeech()
+        #endif
         hasActiveNavigation = true
         activeNavigationToken = navigationToken
         documentGeneration &+= 1
@@ -106,6 +118,40 @@ public class ScriptBridgeHandler: NSObject, WKScriptMessageHandler {
         let initiatingGeneration = self.documentGeneration
 
         Task { @MainActor in
+            guard self.documentGeneration == initiatingGeneration, self.acceptsBridgeMessages else { return }
+            #if os(iOS) && !SWIFT_PACKAGE
+            if let operation = dict["operation"] as? String, operation.hasPrefix("speech.") {
+                guard let id = dict["id"] as? String, !id.isEmpty, id.count <= 200 else { return }
+                if nativeSpeech == nil { nativeSpeech = NativeSpeechService() }
+                var data: [String: Any] = [:]
+                var failure: String?
+                do {
+                    switch operation {
+                    case "speech.voices": data = nativeSpeech!.list()
+                    case "speech.stop": nativeSpeech!.stop(); data = ["stopped": true]
+                    case "speech.speak":
+                        data = try await nativeSpeech!.speak(dict) { [weak self] info in
+                            guard let self, self.documentGeneration == initiatingGeneration,
+                                  self.acceptsBridgeMessages,
+                                  let deliveryUrl = self.webView?.url,
+                                  deliveryUrl.standardizedFileURL.resolvingSymlinksInPath() == messageUrl.standardizedFileURL.resolvingSymlinksInPath(),
+                                  self.isTrustedDocument(url: deliveryUrl) else { return }
+                            self.webView?.callAsyncJavaScript("window.__nativeSpeechStarted(id, data);",
+                                arguments: ["id": id, "data": info], in: nil, in: .page)
+                        }
+                    default: failure = "UNKNOWN_SPEECH_OPERATION"
+                    }
+                } catch { failure = error.localizedDescription }
+                guard self.documentGeneration == initiatingGeneration, self.acceptsBridgeMessages,
+                      let deliveryUrl = self.webView?.url,
+                      deliveryUrl.standardizedFileURL.resolvingSymlinksInPath() == messageUrl.standardizedFileURL.resolvingSymlinksInPath(),
+                      self.isTrustedDocument(url: deliveryUrl) else { return }
+                self.webView?.callAsyncJavaScript("window.__voiceBridgeCallback(id, success, data, error);",
+                    arguments: ["id": id, "success": failure == nil, "data": data,
+                                "error": (failure as Any?) ?? NSNull()], in: nil, in: .page)
+                return
+            }
+            #endif
             let response = await bridge.handleMessage(dict: dict)
             guard let webView = self.webView else { return }
 
