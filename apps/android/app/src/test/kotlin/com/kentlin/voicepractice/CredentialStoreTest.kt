@@ -11,7 +11,7 @@ class CredentialStoreTest {
         val cipher = FakeEnvelopeCipher()
         val store = EncryptedCredentialStore(persistence, cipher)
         val binding = "endpoint:abc"
-        store.set(binding, "top-secret")
+        store.set(binding, "top-secret".toByteArray())
         assertFalse(persistence.values.getValue(binding).contains("top-secret"))
         assertTrue(store.has(binding))
         assertTrue(cipher.lastAssociatedData.contentEquals(binding.toByteArray()))
@@ -25,7 +25,7 @@ class CredentialStoreTest {
     fun copiedEnvelopeCannotBeOpenedUnderAnotherEndpoint() {
         val persistence = FakeEnvelopePersistence()
         val store = EncryptedCredentialStore(persistence, FakeEnvelopeCipher())
-        store.set("endpoint:a", "secret")
+        store.set("endpoint:a", "secret".toByteArray())
         persistence.values["endpoint:b"] = persistence.values.getValue("endpoint:a")
         store.readForNativeRequest("endpoint:b")
     }
