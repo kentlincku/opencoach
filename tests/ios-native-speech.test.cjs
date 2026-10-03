@@ -258,10 +258,16 @@ function shadowingFixture() {
     getSupportedRecordingMimeType: () => 'audio/webm',
     setTimeout(callback) { timers.push(callback); },
     transcribeWithWebAssembly: () => transcript.promise,
+    // startShadowing dependencies defined elsewhere in index.html (browser runtime path).
+    voiceRuntime: { kind: 'browser' },
+    SHADOW_MAX_MS: 15000,
+    clearTimeout() {},
+    startEndOfSpeechDetection() { return () => {}; },
     renderShadowingResult(...args) { rendered.push(args); },
     console: { warn(...args) { warnings.push(args); } },
     alert() {},
   });
+  vm.runInContext(html.slice(html.indexOf('function shadowingTargetSentence('), html.indexOf('function renderShadowingResult(')), f.context);
   vm.runInContext(html.slice(html.indexOf('async function startShadowing('), html.indexOf('// Local-first lesson library management')), f.context);
   return { ...f, permission, transcript, stream, recorders, timers, warnings, rendered,
     get permissionRequests() { return permissionRequests; },

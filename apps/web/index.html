@@ -1373,9 +1373,12 @@ async function startMediaRecording() {
         };
         mediaRecorder.start();
         isMediaRecording = true;
+        const recorderForDetection = mediaRecorder;
+        startEndOfSpeechDetection(stream, () => { if (mediaRecorder === recorderForDetection) stopMediaRecording(); },
+            () => isMediaRecording && mediaRecorder === recorderForDetection);
         updateCoachUI("listening");
         document.getElementById("micNotice").innerHTML =
-            '<span style="color:#00B4D8;">🎙️ 錄音中... 講完後請點擊「完成說話」</span>';
+            '<span style="color:#00B4D8;">🎙️ 錄音中... 講完停頓一下會自動送出（也可點「完成說話」）</span>';
         document.getElementById("btnText").innerText = "完成說話 (Send Audio)";
         document.getElementById("btnIcon").innerText = "✓";
     } catch (e) {
@@ -1384,6 +1387,52 @@ async function startMediaRecording() {
             '<span style="color:#EF4444;">❌ 麥克風啟動失敗，請允許麥克風權限或打字輸入。</span>';
         stopConversation();
     }
+}
+
+// End-of-speech detection: once speech has been heard, auto-submit after a short
+// silence (AnalyserNode RMS with an adaptive noise floor). The manual button
+// shares the same stop path. Caps: 10s with no speech, maxMs overall.
+const EOS_SILENCE_MS = 1200, EOS_MAX_MS = 30000, EOS_NO_SPEECH_MS = 10000;
+function startEndOfSpeechDetection(stream, onEnd, isActive, maxMs = EOS_MAX_MS) {
+    let ctx, timer, closed = false;
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(timer);
+        try { ctx?.close().catch(() => {}); } catch (_) {}
+    };
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return close;
+        ctx = new AudioCtx();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        const data = new Float32Array(analyser.fftSize);
+        const started = performance.now();
+        let noiseFloor = null, heardSpeech = false, lastVoice = started;
+        timer = setInterval(() => {
+            if (!isActive()) { close(); return; }
+            analyser.getFloatTimeDomainData(data);
+            let sum = 0;
+            for (const v of data) sum += v * v;
+            const rms = Math.sqrt(sum / data.length);
+            const now = performance.now();
+            if (noiseFloor === null) noiseFloor = rms;
+            const threshold = Math.max(0.012, noiseFloor * 3);
+            if (rms > threshold) { heardSpeech = true; lastVoice = now; }
+            else if (!heardSpeech) noiseFloor = noiseFloor * 0.95 + rms * 0.05;
+            if ((heardSpeech && now - lastVoice >= EOS_SILENCE_MS) || now - started >= maxMs
+                || (!heardSpeech && now - started >= EOS_NO_SPEECH_MS)) {
+                close();
+                onEnd();
+            }
+        }, 100);
+    } catch (error) {
+        close();
+        console.warn("End-of-speech detection unavailable; use the Send Audio button.", error);
+    }
+    return close;
 }
 
 function stopMediaRecording() {
@@ -1939,7 +1988,7 @@ function stopCurrentVoicePlayback() {
 function cleanTextForTTS(text) {
     if (!text) return "";
     const displayCleaned = text
-        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{E000}-\u{F8FF}\u{FE00}-\u{FE0F}]/gu, "")
+        .replace(/\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\u{E000}-\u{F8FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}]/gu, "")
         .replace(/\*[^*]*\*/g, "")
         .replace(/\[[^\]]*\]/g, "")
         .replace(/[#*_~`^>]/g, "")
@@ -2205,15 +2254,22 @@ function appendChat(role, text) {
 
 // Shadowing Coach
 function evaluateShadowingTranscript(target, spoken) {
-    const targetWords = String(target || "").toLowerCase().split(/\s+/).filter(Boolean);
-    const spokenWords = String(spoken || "").toLowerCase().split(/\s+/).filter(Boolean);
-    const hits = targetWords.map(word => spokenWords.includes(word.replace(/[.,!?]/g, "")));
+    const normalizeWord = word => word.toLowerCase().replace(/[^a-z0-9']/g, "");
+    const targetWords = String(target || "").split(/\s+/).filter(word => normalizeWord(word));
+    const spokenWords = new Set(String(spoken || "").split(/\s+/).map(normalizeWord).filter(Boolean));
+    const hits = targetWords.map(word => spokenWords.has(normalizeWord(word)));
     const matches = hits.filter(Boolean).length;
     return {
         score: targetWords.length ? Math.round((matches / targetWords.length) * 100) : 0,
         targetWords,
         hits
     };
+}
+
+const SHADOW_MAX_MS = 15000;
+// Shadow the first sentence of the reply (what fits one breath and is shown on screen).
+function shadowingTargetSentence(text) {
+    return (String(text || "").match(/^[^.!?]+[.!?]?/) || [""])[0].trim();
 }
 
 function renderShadowingResult(resultBox, target, spoken) {
@@ -2253,7 +2309,8 @@ async function startShadowing() {
     const resultBox = document.getElementById("shadowResultBox");
     resultBox.style.display = "block";
     resultBox.replaceChildren();
-    resultBox.textContent = "🎙️ 請跟讀（本機錄音 5 秒）...";
+    const shadowTarget = shadowingTargetSentence(lastAssistantMsg.content);
+    resultBox.textContent = `🎙️ 請跟讀：「${shadowTarget}」（講完停頓一下自動評分）`;
 
     let stream = null;
     try {
@@ -2270,14 +2327,22 @@ async function startShadowing() {
             recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" }));
         });
         recorder.start();
-        setTimeout(() => {
+        const finishShadowRecording = () => {
+            clearTimeout(shadowCap);
             if (recorder.state === "recording") recorder.stop();
-        }, 5000);
+        };
+        const shadowCap = setTimeout(finishShadowRecording, SHADOW_MAX_MS);
+        startEndOfSpeechDetection(stream, finishShadowRecording, () => recorder.state === "recording", SHADOW_MAX_MS);
         const audioBlob = await audioBlobPromise;
         resultBox.textContent = "🧠 正在使用本機 Whisper 評分...";
-        const spoken = String(await transcribeWithWebAssembly(audioBlob) || "");
+        // Desktop uses the same native STT as conversation; browser Whisper would
+        // need a remote model download that the desktop renderer must not perform.
+        const runtime = voiceRuntime || await createVoiceRuntime();
+        const spoken = runtime?.kind === "electron"
+            ? String((await runtime.transcribe({ audioBlob, mimeType: audioBlob.type || "audio/webm", language: "en" }))?.text || "").trim()
+            : String(await transcribeWithWebAssembly(audioBlob) || "");
         if (!spoken) throw new Error("NO_LOCAL_TRANSCRIPT");
-        renderShadowingResult(resultBox, lastAssistantMsg.content, spoken);
+        renderShadowingResult(resultBox, shadowTarget, spoken);
     } catch (error) {
         console.warn("Local shadowing assessment failed:", error);
         resultBox.textContent = "💡 本機語音評分失敗，請確認麥克風權限與 Whisper 模型。";
@@ -2953,6 +3018,12 @@ function parseProviderReply(config, data) {
     throw new Error("INVALID_RESPONSE_FORMAT");
 }
 
+// IPC carries plain {role, content} only: history entries may hold non-cloneable
+// fields, which make ipcRenderer.invoke throw DataCloneError before the broker runs.
+function ipcChatMessages(conversationMessages) {
+    return (conversationMessages || []).map(({ role, content }) => ({ role, content }));
+}
+
 async function requestProviderChat({ providerId, baseUrl, apiKey, model, conversationMessages, maxTokens = 300 }) {
     const config = getProviderConfig(providerId);
     if (providerId === APPLE_FOUNDATION_MODEL_PROVIDER_ID) {
@@ -2978,7 +3049,7 @@ async function requestProviderChat({ providerId, baseUrl, apiKey, model, convers
     if (isSubscriptionProvider(providerId)) {
         if (!hasDesktopSubscriptionBroker()) throw new Error("LLM_PROVIDER_UNAVAILABLE");
         const result = await window.electronAPI.subscriptionOperation({
-            operation: "chat", providerId, model, messages: conversationMessages, maxTokens
+            operation: "chat", providerId, model, messages: ipcChatMessages(conversationMessages), maxTokens
         });
         if (!result?.text) throw new Error("INVALID_RESPONSE_FORMAT");
         return result.text.trim();
@@ -2999,7 +3070,7 @@ async function requestProviderChat({ providerId, baseUrl, apiKey, model, convers
         await desktopCredentialWrites.get(profile);
         try {
             const result = await window.electronAPI.providerOperation({
-                operation: "chat", providerId: profile, model, messages: conversationMessages, maxTokens
+                operation: "chat", providerId: profile, model, messages: ipcChatMessages(conversationMessages), maxTokens
             });
             if (!result?.text) throw new Error("INVALID_RESPONSE_FORMAT");
             return result.text.trim();
