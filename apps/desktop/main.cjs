@@ -444,6 +444,21 @@ function registerIpc() {
   });
 }
 
+const RENDERER_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  "worker-src 'self' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' data: blob:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-src 'none'",
+].join('; ');
+
 async function createWindow() {
   const rendererPath = path.join(projectRoot(), 'apps/web/index.html');
   trustedRendererUrl = pathToFileURL(rendererPath).href;
@@ -465,6 +480,12 @@ async function createWindow() {
     { urls: ['http://*/*', 'https://*/*'] },
     (details, callback) => callback({ cancel: details.resourceType === 'script' })
   );
+  // Renderer CSP: no eval/new Function; scripts and workers only from the packaged
+  // web root; wasm allowed for local ORT/Whisper fallbacks. Inline script/style stay
+  // until inline handlers are migrated. Network goes through the Main provider broker.
+  electronSession.webRequest.onHeadersReceived({ urls: ['file://*/*'] }, (details, callback) => {
+    callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [RENDERER_CSP] } });
+  });
   electronSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const requestingUrl = String(details?.requestingUrl || webContents.getURL() || '');
     const mediaTypes = Array.isArray(details?.mediaTypes) ? details.mediaTypes : [];
