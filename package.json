@@ -29,7 +29,7 @@
     "@huggingface/transformers": "3.3.3",
     "electron": "^44.0.0",
     "electron-builder": "^26.0.12",
-    "esbuild": "0.25.9",
+    "esbuild": "0.28.2",
     "kokoro-js": "1.1.1",
     "png-to-ico": "^3.0.1",
     "sharp": "0.35.4",
