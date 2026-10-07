@@ -17,10 +17,10 @@
     "build:web": "node scripts/build-web.mjs",
     "build:icons": "node scripts/build-icons.mjs",
     "prepack:mac": "node scripts/check-macos-runtime.mjs",
-    "pack:mac": "npm run build:web && electron-builder --mac dmg zip --arm64",
+    "pack:mac": "npm run build:web && electron-builder --mac dmg zip --arm64 --publish never",
     "verify:mac:voice": "node scripts/verify-macos-packaged-voice.mjs --app \"dist/mac-arm64/Voice Practice.app\"",
     "verify:mac:voice:app": "node scripts/macos-packaged-voice-e2e.cjs --app \"dist/mac-arm64/Voice Practice.app\"",
-    "pack:win": "npm run build:web && electron-builder --win nsis portable --x64",
+    "pack:win": "npm run build:web && electron-builder --win nsis portable --x64 --publish never",
     "dist:dir": "npm run build:web && electron-builder --dir",
     "pretest": "npm run build:web",
     "test": "node scripts/run-tests.mjs"

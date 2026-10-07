@@ -9,8 +9,8 @@ class PackagingContractTests(unittest.TestCase):
     def test_builder_contract_is_release_safe(self):
         package = json.loads((ROOT / "package.json").read_text())
         config = (ROOT / "electron-builder.yml").read_text()
-        self.assertEqual(package["scripts"]["pack:mac"], "npm run build:web && electron-builder --mac dmg zip --arm64")
-        self.assertEqual(package["scripts"]["pack:win"], "npm run build:web && electron-builder --win nsis portable --x64")
+        self.assertEqual(package["scripts"]["pack:mac"], "npm run build:web && electron-builder --mac dmg zip --arm64 --publish never")
+        self.assertEqual(package["scripts"]["pack:win"], "npm run build:web && electron-builder --win nsis portable --x64 --publish never")
         self.assertEqual(package["scripts"]["dist:dir"], "npm run build:web && electron-builder --dir")
         self.assertEqual(package["scripts"]["test"], "node scripts/run-tests.mjs")
         self.assertEqual(package["version"], "0.2.0-beta.1")
