@@ -1,6 +1,6 @@
 # Install on macOS (Apple Silicon beta)
 
-A release must contain both DMG/ZIP and `SHA256SUMS.txt`. Verify the checksum before opening. Drag **Voice Practice.app** to Applications and launch normally; do not bypass Gatekeeper. Microphone access is requested only when recording.
+A release must contain both DMG/ZIP and `SHA256SUMS.txt`. Verify the checksum before opening. Drag **Voice Practice.app** to Applications. Engineering pre-releases are not signed or notarized, so Gatekeeper blocks the first launch; only open them if you trust the build and have verified the checksum (System Settings → Privacy & Security → Open Anyway). Microphone access is requested only when recording.
 
 ## Desktop Lite with oMLX
 
@@ -23,7 +23,9 @@ You can build and package the macOS arm64 DMG and ZIP locally:
 ```bash
 npm ci
 npm run build:icons
+bash scripts/build-macos-runtime.sh   # embedded voice runtime (requires uv)
 CSC_IDENTITY_AUTO_DISCOVERY=false npm run pack:mac
+node scripts/check-macos-runtime.mjs --app "dist/mac-arm64/Voice Practice.app"
 node scripts/write-checksums.mjs dist
 ```
 

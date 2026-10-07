@@ -1,6 +1,6 @@
 # Release status
 
-OpenCoach currently publishes source only. There is no signed, notarized, production-supported binary release.
+OpenCoach publishes source plus unsigned engineering pre-releases of the desktop app on GitHub Releases. There is no signed, notarized, production-supported binary release.
 
 ## Source publication
 
@@ -11,9 +11,9 @@ The public source snapshot contains the shared web application, Electron desktop
 | Artifact class | Status |
 |---|---|
 | Browser static build | Build from source |
-| Windows installer / portable app | Engineering validation in progress; not published |
+| Windows installer / portable app | Unsigned engineering pre-release on GitHub Releases (no models) |
 | Windows native runtime and models | Not stored in Git; artifact-specific licensing and provenance required |
-| macOS app/runtime | Packaging source available; signing, notarization, and license gates not complete |
+| macOS app/runtime | Unsigned, not notarized arm64 engineering pre-release on GitHub Releases (no models); license gates not complete |
 | iOS app | Requires developer signing and real-device verification |
 | Android app | Requires release signing and real-device verification |
 

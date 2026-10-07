@@ -28,7 +28,7 @@ OpenCoach is open-source beta software. The source tree is suitable for developm
 | Target | Source status | Public binary status |
 |---|---|---|
 | Browser / PWA | Available | Build from source |
-| Electron desktop | Available | Unsigned engineering builds only |
+| Electron desktop | Available | Unsigned engineering pre-releases (macOS arm64, Windows x64) |
 | Windows native voice | Source and reproducible build inputs available | No public runtime/model bundle |
 | macOS native voice | Source available; packaging dependencies require separate license review | No public binary |
 | iOS | Source available | Signing and real-device release gates not completed |
@@ -96,6 +96,27 @@ A Hosted HTTPS deployment may access a local endpoint only where the browser's L
 ```bash
 npm start
 ```
+
+### Downloads
+
+Unsigned engineering pre-releases (macOS arm64 DMG/ZIP, Windows x64 Setup/Portable EXE, `SHA256SUMS.txt`) are published on the [Releases page](https://github.com/kentlincku/opencoach/releases). They contain no speech model weights; the app falls back to system/browser speech. Verify checksums before opening.
+
+### npm scripts
+
+| Command | Purpose |
+|---|---|
+| `npm test` | Build web assets, run Python and Node tests, syntax checks |
+| `npm run start:web` | Local web mode on `http://127.0.0.1:8765` |
+| `npm start` | Electron desktop (development) |
+| `npm run build:web` | Build generated web assets only |
+| `npm run build:icons` | Generate app icons (required before packaging) |
+| `npm run pack:mac` | macOS arm64 DMG + ZIP into `dist/` |
+| `npm run pack:win` | Windows x64 Setup + Portable EXE into `dist/` |
+| `npm run dist:dir` | Unpacked app directory only (no installer) |
+| `npm run verify:mac:voice` | Verify the embedded voice runtime in the packaged macOS app |
+| `npm run verify:mac:voice:app` | End-to-end voice check against the packaged macOS app |
+
+Release builds are produced by `.github/workflows/release.yml` when a `v*` tag is pushed.
 
 Native speech backends require the platform-specific runtime setup described in:
 

@@ -17,7 +17,17 @@ async function writeSmokeResult({ filePath, tempRoot, marker, fsImpl = fs }) {
   }
   const resolvedRoot = path.resolve(tempRoot);
   const resolvedFile = path.resolve(filePath);
-  if (path.dirname(resolvedFile) !== resolvedRoot) throw new Error('INVALID_SMOKE_RESULT_PATH');
+  // Windows may report the temp root as an 8.3 short path (C:\Users\RUNNER~1\...)
+  // in one place and as the long path in another; compare canonical paths.
+  const canonical = async target => {
+    try { return await (fsImpl.realpath?.native ?? fsImpl.realpath)(target); } catch { return target; }
+  };
+  const canonicalRoot = await canonical(resolvedRoot);
+  const canonicalParent = await canonical(path.dirname(resolvedFile));
+  const sameDirectory = process.platform === 'win32'
+    ? canonicalParent.toLowerCase() === canonicalRoot.toLowerCase()
+    : canonicalParent === canonicalRoot;
+  if (!sameDirectory) throw new Error('INVALID_SMOKE_RESULT_PATH');
   await fsImpl.writeFile(resolvedFile, `${marker}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
 }
 

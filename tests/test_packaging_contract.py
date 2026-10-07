@@ -52,10 +52,23 @@ class PackagingContractTests(unittest.TestCase):
         for workflow_path in workflows.glob("*.yml"):
             workflow = workflow_path.read_text()
             self.assertNotIn("release-signing", workflow)
-            self.assertNotIn("upload-artifact", workflow)
+            if workflow_path.name != "release.yml":
+                self.assertNotIn("upload-artifact", workflow)
             self.assertNotIn("secrets.MACOS", workflow)
             self.assertNotIn("secrets.WINDOWS", workflow)
             self.assertNotIn("ANDROID_RELEASE_", workflow)
+
+    def test_release_workflow_publishes_only_unsigned_tagged_prereleases(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        self.assertIn("tags: ['v*']", workflow)
+        self.assertIn("--prerelease", workflow)
+        self.assertIn("--verify-tag", workflow)
+        self.assertIn("CSC_IDENTITY_AUTO_DISCOVERY: 'false'", workflow)
+        self.assertIn("write-checksums.mjs", workflow)
+        self.assertIn("build-and-verify-windows-package.ps1", workflow)
+        self.assertIn("check-macos-runtime.mjs", workflow)
+        self.assertNotIn("secrets.", workflow)
+        self.assertIn("contents: read", workflow.split("jobs:")[0])
 
     def test_macos_arm64_packaging_contract(self):
         config = (ROOT / "electron-builder.yml").read_text()
