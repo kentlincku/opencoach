@@ -30,7 +30,7 @@ OpenCoach is open-source beta software. The source tree is suitable for developm
 | Browser / PWA | Available | Build from source |
 | Electron desktop | Available | Unsigned engineering pre-releases (macOS arm64, Windows x64) |
 | Windows native voice | Source and reproducible build inputs available | No public runtime/model bundle |
-| macOS native voice | Source available; packaging dependencies require separate license review | No public binary |
+| macOS native voice | Source available; packaging dependencies require separate license review | Runtime embedded in the unsigned arm64 pre-release; no model weights |
 | iOS | Source available | Signing and real-device release gates not completed |
 | Android | Source available | Signing and real-device release gates not completed |
 

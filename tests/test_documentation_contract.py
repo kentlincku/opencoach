@@ -52,7 +52,7 @@ class PublicRepositoryContractTests(unittest.TestCase):
         release = self.read("docs/RELEASE_STATUS.md")
         for value in (
             "no signed public desktop or mobile release",
-            "No public binary",
+            "no model weights",
             "No public runtime/model bundle",
         ):
             self.assertIn(value, readme)
