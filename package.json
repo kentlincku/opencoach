@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@huggingface/transformers": "3.3.3",
-    "electron": "^44.0.0",
+    "electron": "^44.1.1",
     "electron-builder": "^26.0.12",
     "esbuild": "0.25.9",
     "kokoro-js": "1.1.1",
