@@ -117,10 +117,17 @@ if (-not $SkipSmokeTest) {
         $portableProc = Start-Process -FilePath $portableExe.FullName -ArgumentList "--smoke-test" -Wait -PassThru
         $portableExitCode = $portableProc.ExitCode
         if ($portableExitCode -ne 0) { throw "Portable smoke test failed with exit code: $portableExitCode" }
-        Wait-PathState -Path $portableResultFile -ShouldExist $true
+        try {
+            Wait-PathState -Path $portableResultFile -ShouldExist $true
+        } catch {
+            Write-Host "  Portable exit code: $portableExitCode; expected result file: $portableResultFile"
+            Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Filter 'voice-practice-*' -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "  temp entry: $($_.FullName)" }
+            throw
+        }
         $portableOutput = Get-Content -LiteralPath $portableResultFile -Raw -Encoding UTF8
         $portableOutput | Write-Host
-        $expectedPortableMarker = 'PACKAGED_APP_SMOKE_OK:Voice Practice · 可愛虛擬英語教練 (Local-first)'
+        $expectedPortableMarker = 'PACKAGED_APP_SMOKE_OK:OpenCoach · Local-first English Practice'
         if ($portableOutput.Trim() -ne $expectedPortableMarker) {
             throw "Portable smoke test marker/title did not match the expected UTF-8 product title"
         }

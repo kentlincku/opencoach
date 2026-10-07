@@ -56,7 +56,8 @@ class PublicRepositoryContractTests(unittest.TestCase):
             "No public runtime/model bundle",
         ):
             self.assertIn(value, readme)
-        self.assertIn("source only", release)
+        self.assertIn("unsigned engineering pre-release", release)
+        self.assertIn("no signed, notarized, production-supported binary release", release)
         self.assertIn("not stored in git", release.lower())
 
     def test_faster_whisper_is_source_prepared_not_committed_as_wheel(self):

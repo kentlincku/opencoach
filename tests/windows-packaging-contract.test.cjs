@@ -72,7 +72,7 @@ test('Windows portable smoke verifies an application-owned sentinel', () => {
   assert.doesNotMatch(script, /&&\s*echo\s+PACKAGED_APP_SMOKE_OK/i);
   assert.match(script, /VOICE_PRACTICE_SMOKE_RESULT_FILE/);
   assert.match(script, /Get-Content[^\n]*-Encoding\s+UTF8/);
-  assert.match(script, /PACKAGED_APP_SMOKE_OK:Voice Practice/);
+  assert.match(script, /PACKAGED_APP_SMOKE_OK:OpenCoach · Local-first English Practice/);
   assert.match(script, /Wait-PathState -Path \$portableResultFile -ShouldExist \$true/);
   assert.match(script, /\$portableOutput\s*=\s*Get-Content/);
   assert.match(script, /Portable smoke test marker\/title did not match the expected UTF-8 product title/);
