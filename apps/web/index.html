@@ -2598,7 +2598,7 @@ const DESKTOP_PROVIDER_PROFILES = Object.freeze({
     "http://localhost:1234/v1": "lmstudio",
     "http://127.0.0.1:1234/v1": "lmstudio"
 });
-const DESKTOP_SECRET_PROFILES = new Set(["claude", "openai", "gemini", "groq", "deepseek"]);
+const DESKTOP_SECRET_PROFILES = new Set(["claude", "openai", "gemini", "groq", "deepseek", "custom"]);
 
 function normalizeApiBaseUrl(value) {
     return String(value || "").trim().replace(/\/+$/, "");
@@ -2618,9 +2618,25 @@ function normalizeCredentialBaseUrl(value) {
 function desktopProviderProfile(providerId, baseUrl) {
     if (!window.electronAPI?.providerOperation && !window.electronAPI?.providerCredentialSet) return providerId;
     if (providerId !== DIRECT_API_PROVIDER_ID) return providerId;
-    const profile = DESKTOP_PROVIDER_PROFILES[normalizeApiBaseUrl(baseUrl)];
-    if (!profile) throw new Error("DESKTOP_ENDPOINT_NOT_ALLOWED");
-    return profile;
+    const normalized = desktopEndpointUrl(baseUrl);
+    if (!normalized) throw new Error("INVALID_PROVIDER_ENDPOINT");
+    // Known endpoints keep their profile (and stored key); any other user-set endpoint is "custom".
+    return DESKTOP_PROVIDER_PROFILES[normalized] || "custom";
+}
+
+function desktopEndpointUrl(baseUrl) {
+    const normalized = normalizeApiBaseUrl(baseUrl);
+    try {
+        const url = new URL(normalized);
+        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return "";
+        return normalized;
+    } catch { return ""; }
+}
+
+// Broker payload: profile id, plus the user's own base URL for a custom endpoint.
+function desktopProviderTarget(providerId, baseUrl) {
+    const profile = desktopProviderProfile(providerId, baseUrl);
+    return profile === "custom" ? { providerId: profile, baseUrl: desktopEndpointUrl(baseUrl) } : { providerId: profile };
 }
 
 const PROVIDERS_CONFIG = Object.freeze({
@@ -3070,7 +3086,7 @@ async function requestProviderChat({ providerId, baseUrl, apiKey, model, convers
         await desktopCredentialWrites.get(profile);
         try {
             const result = await window.electronAPI.providerOperation({
-                operation: "chat", providerId: profile, model, messages: ipcChatMessages(conversationMessages), maxTokens
+                operation: "chat", ...desktopProviderTarget(providerId, baseUrl), model, messages: ipcChatMessages(conversationMessages), maxTokens
             });
             if (!result?.text) throw new Error("INVALID_RESPONSE_FORMAT");
             return result.text.trim();
@@ -3363,7 +3379,7 @@ async function loadProviderIntoForm(providerId, { preserveSavedUrl = false } = {
                 ? `${config.keyHint} 金鑰由 iOS 原生 Keychain 安全儲存；此欄位不會回填。`
                 : `${config.keyHint} 金鑰由原生安全儲存保護；此欄位不會回填。`)
             : (isDesktopBroker
-                ? (desktopAcceptsKey ? `${config.keyHint} 金鑰由作業系統安全儲存；此欄位不會回填。` : "桌面版只允許受信任的預設端點；本機端點不儲存金鑰，自訂端點會被拒絕。")
+                ? (desktopAcceptsKey ? `${config.keyHint} 金鑰由作業系統安全儲存；此欄位不會回填。` : "本機端點不需要金鑰。")
                 : config.keyHint));
     if (isNativeBridge && window.voiceNativeBridge?.credentialHas) {
         window.voiceNativeBridge.credentialHas(providerId, baseUrl).then(status => {
@@ -3595,7 +3611,7 @@ async function fetchModelsFromProvider() {
                 await desktopCredentialWrites.get(profile);
                 if (!brokerRequestIsCurrent()) return;
             }
-            const result = await window.electronAPI.providerOperation({ operation: "models", providerId: profile });
+            const result = await window.electronAPI.providerOperation({ operation: "models", ...desktopProviderTarget(providerId, baseUrl) });
             if (!brokerRequestIsCurrent()) return;
             const ids = Array.isArray(result?.models) ? result.models.filter(id => id && !/whisper|embed|dall-e|tts/i.test(id)) : [];
             if (!ids.length) throw new Error("EMPTY_MODEL_LIST");
@@ -3606,7 +3622,7 @@ async function fetchModelsFromProvider() {
             if (error?.message?.includes("CONNECTION_REFUSED") || error?.message?.includes("ECONNREFUSED") || /refused/i.test(String(error?.message || error))) {
                 notice.textContent = "無法連線至模型服務；請確認 oMLX 已啟動、port 8000 且監聽 127.0.0.1。";
             } else {
-                notice.textContent = "💡 桌面安全 Broker 無法取得模型；請確認金鑰或使用受支援的預設端點。";
+                notice.textContent = "💡 無法從端點取得模型；請確認端點網址、伺服器已啟動，以及金鑰（如需要）。";
             }
         } finally {
             if (brokerRequestIsCurrent()) modelDiscoveryLoadingEpoch = null;

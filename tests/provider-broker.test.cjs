@@ -6,10 +6,11 @@ function responseJson(value, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
 }
 
-function brokerFixture(fetchImpl) {
+function brokerFixture(fetchImpl, stored = new Set()) {
   const reads = [];
   const credentialStore = {
     get: async provider => { reads.push(provider); return `key-for-${provider}`; },
+    has: async provider => ({ hasCredential: stored.has(provider) }),
   };
   return { broker: new ProviderBroker({ credentialStore, fetchImpl }), reads };
 }
@@ -48,7 +49,10 @@ test('anthropic chat injects x-api-key and returns only normalized text', async 
 test('rejects unknown fields, custom providers, and renderer supplied URLs', async () => {
   const { broker } = brokerFixture(async () => { throw new Error('must not fetch'); });
   await assert.rejects(broker.operation({ operation: 'models', providerId: 'openai', baseUrl: 'http://169.254.169.254' }), /INVALID_PROVIDER_OPERATION/);
-  await assert.rejects(broker.operation({ operation: 'models', providerId: 'custom' }), /PROVIDER_NOT_ALLOWED/);
+  await assert.rejects(broker.operation({ operation: 'models', providerId: 'nope' }), /PROVIDER_NOT_ALLOWED/);
+  await assert.rejects(broker.operation({ operation: 'models', providerId: 'custom' }), /INVALID_PROVIDER_ENDPOINT/);
+  for (const baseUrl of ['file:///etc/passwd', 'http://u:p@host/v1', 'not a url', 42])
+    await assert.rejects(broker.operation({ operation: 'models', providerId: 'custom', baseUrl }), /INVALID_PROVIDER_ENDPOINT/);
   await assert.rejects(broker.operation({ operation: 'chat', providerId: 'openai', model: 'x', messages: [], method: 'DELETE' }), /INVALID_PROVIDER_OPERATION/);
 });
 
@@ -155,4 +159,23 @@ test('oMLX connection refused produces clean PROVIDER_CONNECTION_REFUSED error',
     broker.operation({ operation: 'models', providerId: 'omlx' }),
     /PROVIDER_CONNECTION_REFUSED/,
   );
+});
+
+test('custom endpoint: user-set URL (any host/port), key optional and not URL-bound', async () => {
+  const calls = [];
+  const { broker } = brokerFixture(async (url, options) => { calls.push({ url, options });
+    return url.endsWith('/models') ? responseJson({ data: [{ id: 'ornith-9b' }] }) : responseJson({ choices: [{ message: { content: 'Hi' } }] }); });
+  assert.deepEqual(await broker.operation({ operation: 'models', providerId: 'custom', baseUrl: 'http://127.0.0.1:8080/v1/' }), { models: ['ornith-9b'] });
+  assert.equal(calls[0].url, 'http://127.0.0.1:8080/v1/models');
+  assert.equal(calls[0].options.headers.Authorization, undefined, 'no stored key -> no Authorization header');
+  await broker.operation({ operation: 'chat', providerId: 'custom', baseUrl: 'https://llm.example.com:9443/v1', model: 'm', messages: [{ role: 'user', content: 'Hi' }] });
+  assert.equal(calls[1].url, 'https://llm.example.com:9443/v1/chat/completions');
+  await assert.rejects(broker.operation({ operation: 'models', providerId: 'openai', baseUrl: 'http://127.0.0.1:8080/v1' }), /INVALID_PROVIDER_OPERATION/);
+});
+
+test('custom endpoint sends the stored custom key when one is set', async () => {
+  let headers;
+  const { broker } = brokerFixture(async (url, options) => { headers = options.headers; return responseJson({ data: [{ id: 'm' }] }); }, new Set(['custom']));
+  await broker.operation({ operation: 'models', providerId: 'custom', baseUrl: 'https://my-gateway.example/v1' });
+  assert.equal(headers.Authorization, 'Bearer key-for-custom');
 });

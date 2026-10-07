@@ -5,7 +5,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 const PROVIDER_NAMESPACES = Object.freeze({
-  api: Object.freeze({ directory: 'provider-credentials', providers: new Set(['claude', 'openai', 'gemini', 'groq', 'deepseek']) }),
+  api: Object.freeze({ directory: 'provider-credentials', providers: new Set(['claude', 'openai', 'gemini', 'groq', 'deepseek', 'custom']) }),
   subscription: Object.freeze({ directory: 'subscription-tokens', providers: new Set(['chatgpt-subscription', 'grok-subscription']) }),
 });
 const MAX_CREDENTIAL_CHARS = 16 * 1024;

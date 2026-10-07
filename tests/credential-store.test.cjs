@@ -39,7 +39,7 @@ test('uses 0600 credential file permissions on POSIX', { skip: process.platform 
 
 test('rejects providers outside the credential allowlist and never stores local/custom secrets', async t => {
   const { store } = await fixture(t);
-  for (const provider of ['custom', 'omlx', 'ollama', 'lmstudio', '../openai']) {
+  for (const provider of ['omlx', 'ollama', 'lmstudio', '../openai', 'Custom']) {
     await assert.rejects(store.set(provider, 'secret'), /PROVIDER_NOT_ALLOWED/);
   }
 });

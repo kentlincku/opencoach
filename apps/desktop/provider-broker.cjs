@@ -25,14 +25,27 @@ function exactKeys(value, keys) {
   return Object.keys(value).every(key => allowed.has(key));
 }
 
-function providerFor(providerId) {
+// 'custom' = any user-configured OpenAI-compatible endpoint (local or remote).
+// The user's own setting is authoritative; only the URL shape is checked.
+function customEndpoint(baseUrl) {
+  if (typeof baseUrl !== 'string' || !baseUrl || baseUrl.length > 2048) throw new Error('INVALID_PROVIDER_ENDPOINT');
+  let url;
+  try { url = new URL(baseUrl.trim().replace(/\/+$/, '')); } catch { throw new Error('INVALID_PROVIDER_ENDPOINT'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('INVALID_PROVIDER_ENDPOINT');
+  url.hash = ''; url.search = '';
+  return Object.freeze({ id: 'custom', base: url.href.replace(/\/+$/, ''), host: url.hostname, scheme: url.protocol, protocol: 'openai', secret: 'optional' });
+}
+
+function providerFor(providerId, baseUrl) {
+  if (providerId === 'custom') return customEndpoint(baseUrl);
   if (typeof providerId !== 'string' || !Object.hasOwn(PROVIDERS, providerId)) throw new Error('PROVIDER_NOT_ALLOWED');
+  if (baseUrl !== undefined) throw new Error('INVALID_PROVIDER_OPERATION');
   return PROVIDERS[providerId];
 }
 
 function validateEndpoint(config, suffix) {
   const url = new URL(`${config.base}${suffix}`);
-  const expectedScheme = config.secret ? 'https:' : 'http:';
+  const expectedScheme = config.scheme || (config.secret ? 'https:' : 'http:');
   if (url.protocol !== expectedScheme || url.hostname !== config.host || url.username || url.password) {
     throw new Error('UNSAFE_PROVIDER_ENDPOINT');
   }
@@ -92,7 +105,7 @@ class ProviderBroker {
   }
 
   async operation(payload) {
-    if (!exactKeys(payload, ['operation', 'providerId', 'model', 'messages', 'maxTokens'])) {
+    if (!exactKeys(payload, ['operation', 'providerId', 'baseUrl', 'model', 'messages', 'maxTokens'])) {
       throw new Error('INVALID_PROVIDER_OPERATION');
     }
     if (payload.operation === 'models') return this.models(payload);
@@ -103,6 +116,12 @@ class ProviderBroker {
   async headers(provider, contentType = 'application/json') {
     const headers = contentType ? { 'Content-Type': contentType } : {};
     if (!provider.secret) return headers;
+    if (provider.secret === 'optional') {
+      // A key for a custom endpoint is optional (local servers usually need none).
+      if (!(await this.credentials.has('custom'))?.hasCredential) return headers;
+      headers.Authorization = `Bearer ${await this.credentials.get('custom')}`;
+      return headers;
+    }
     const key = await this.credentials.get(Object.keys(PROVIDERS).find(id => PROVIDERS[id] === provider));
     if (provider.protocol === 'anthropic') {
       headers['x-api-key'] = key;
@@ -130,8 +149,8 @@ class ProviderBroker {
   }
 
   async models(payload) {
-    if (!exactKeys(payload, ['operation', 'providerId']) || payload.operation !== 'models') throw new Error('INVALID_PROVIDER_OPERATION');
-    const provider = providerFor(payload.providerId);
+    if (!exactKeys(payload, ['operation', 'providerId', 'baseUrl']) || payload.operation !== 'models') throw new Error('INVALID_PROVIDER_OPERATION');
+    const provider = providerFor(payload.providerId, payload.baseUrl);
     const data = await this.request(validateEndpoint(provider, '/models'), { method: 'GET', headers: await this.headers(provider) });
     let models = Array.isArray(data?.data) ? data.data.map(item => item?.id || item?.name) : [];
     if (!models.length && Array.isArray(data?.models)) models = data.models.map(item => item?.id || item?.name || item);
@@ -141,10 +160,10 @@ class ProviderBroker {
   }
 
   async chat(payload) {
-    if (!exactKeys(payload, ['operation', 'providerId', 'model', 'messages', 'maxTokens']) || payload.operation !== 'chat') {
+    if (!exactKeys(payload, ['operation', 'providerId', 'baseUrl', 'model', 'messages', 'maxTokens']) || payload.operation !== 'chat') {
       throw new Error('INVALID_PROVIDER_OPERATION');
     }
-    const provider = providerFor(payload.providerId);
+    const provider = providerFor(payload.providerId, payload.baseUrl);
     const model = validateModel(payload.model);
     const messages = validateMessages(payload.messages);
     const maxTokens = payload.maxTokens === undefined ? 300 : payload.maxTokens;
