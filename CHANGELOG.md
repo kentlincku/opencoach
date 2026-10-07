@@ -15,6 +15,9 @@ All notable public changes to OpenCoach are documented here.
 
 ### Fixed
 
+- Desktop LLM settings accept any user-entered OpenAI-compatible `http`/`https` endpoint (any host/port, e.g. llama.cpp on `:8080` or a LAN server) instead of a fixed list; previously "從端點取得模型" failed for unlisted endpoints. An optional API key for a custom endpoint is kept in the OS keystore. The broker still calls only `/models` and `/chat/completions`, without redirects or URL credentials, and with a response-size cap.
+- Text-to-speech no longer rejects LLM replies containing accented Latin letters (`café`), typographic quotes, Markdown lists/line breaks, or free-standing dashes; these are folded to ASCII or spoken as pauses.
+
 - Desktop chat: provider and subscription IPC payloads carry only `{role, content}`, so conversation history with non-cloneable fields no longer fails with `DataCloneError`.
 - Text-to-speech no longer reads emoji names aloud (all `Extended_Pictographic`, skin tones, ZWJ sequences, keycaps and flags are stripped).
 - Voice conversation auto-submits after about 1.2 s of silence once speech is heard (10 s no-speech and 30 s maximum caps); the manual button still works.

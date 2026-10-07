@@ -202,3 +202,19 @@ class RuntimeUnavailableBackendTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpeechTextFoldingTest(unittest.TestCase):
+    def test_accented_latin_and_typographic_quotes_fold_to_ascii(self):
+        from native.python.voice_runtime.text import clean_text_for_speech
+        self.assertEqual(clean_text_for_speech('Welcome to the caf\u00e9! A na\u00efve r\u00e9sum\u00e9.'),
+                         'Welcome to the cafe! A naive resume.')
+        self.assertEqual(clean_text_for_speech('I\u2019m \u201cfine\u201d \u2013 thanks'), 'I\'m "fine", thanks')
+        self.assertEqual(clean_text_for_speech('\u4e2d\u6587 test'), 'test')
+
+    def test_markdown_lists_and_free_dashes_become_pauses(self):
+        from native.python.voice_runtime.text import clean_text_for_speech
+        reply = 'Here are our prices:\n\n- **Small:** $3.50\n- **Large:** $5.50\n\nAnything else?'
+        cleaned = clean_text_for_speech(reply)
+        self.assertEqual(cleaned, 'Here are our prices: Small: $3.50, Large: $5.50. Anything else?')
+        self.assertEqual(clean_text_for_speech("It's well-known - really."), "It's well-known, really.")

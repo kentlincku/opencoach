@@ -12,7 +12,7 @@ function load(api) {
     window: { electronAPI: api },
     getProviderConfig: () => ({ authMode: 'optional' }), isSubscriptionProvider: id => id === 'sub',
     hasDesktopSubscriptionBroker: () => true,
-    desktopProviderProfile: () => 'omlx', desktopCredentialWrites: new Map(),
+    desktopProviderProfile: () => 'omlx', desktopProviderTarget: () => ({ providerId: 'omlx' }), desktopCredentialWrites: new Map(),
     APPLE_FOUNDATION_MODEL_PROVIDER_ID: 'apple',
   });
   vm.runInContext(section('// IPC carries plain {role, content} only', 'function populateModelSelect('), context);
