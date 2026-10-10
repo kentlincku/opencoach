@@ -5,9 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'apps', 'web', 'service-worker.js'), 'utf8');
-const appCacheMatch = source.match(/const APP_CACHE = "([^"]+)"/);
-assert.ok(appCacheMatch, 'service worker must declare APP_CACHE');
-const currentAppCache = appCacheMatch[1];
+const currentCache = source.match(/const APP_CACHE = "([^"]+)";/)?.[1];
+if (!currentCache) throw new Error('APP_CACHE_NOT_FOUND');
 
 function createHarness({ cacheKeys = [], failPrecache = false, hasActiveWorker = false, rejectNavigationUrl = '' } = {}) {
   const listeners = {};
@@ -45,7 +44,7 @@ function createHarness({ cacheKeys = [], failPrecache = false, hasActiveWorker =
     fetch: async () => new Response('ok'),
     caches: {
       async open() { return cache; },
-      async keys() { return [...cacheKeys, currentAppCache]; },
+      async keys() { return [...cacheKeys, currentCache]; },
       async delete(key) { deleted.push(key); return true; },
       async match() { return null; },
     },

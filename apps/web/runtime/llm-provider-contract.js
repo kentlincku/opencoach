@@ -9,6 +9,7 @@
     OPENAI_COMPATIBLE: 'openai-compatible',
     CHATGPT_SUBSCRIPTION: 'chatgpt-subscription',
     GROK_SUBSCRIPTION: 'grok-subscription',
+    CLAUDE_SUBSCRIPTION: 'claude-subscription',
     APPLE_FOUNDATION_MODELS: 'apple-foundation-models',
   });
 
@@ -43,7 +44,7 @@
       modelsPath: '/models',
       chatPath: '/responses',
       keyHint: '由Desktop受信任程序執行OpenAI device-code登入；Renderer不接觸token。',
-      defaultModels: [],
+      defaultModels: ['gpt-5.4', 'gpt-5.4-mini'],
     }),
 
     [PROVIDER_IDS.GROK_SUBSCRIPTION]: Object.freeze({
@@ -57,7 +58,21 @@
       modelsPath: '/models',
       chatPath: '/responses',
       keyHint: '由Desktop受信任程序執行xAI device-code登入；可用模型與額度依帳號entitlement決定。',
-      defaultModels: [],
+      defaultModels: ['grok-4.6', 'grok-4.5'],
+    }),
+
+    [PROVIDER_IDS.CLAUDE_SUBSCRIPTION]: Object.freeze({
+      id: PROVIDER_IDS.CLAUDE_SUBSCRIPTION,
+      name: 'Claude Pro / Max Subscription',
+      kind: 'subscription',
+      protocol: 'anthropic',
+      authMode: 'provider-oauth',
+      authProduct: 'claude-subscription',
+      baseUrl: 'https://api.anthropic.com/v1',
+      modelsPath: '/models',
+      chatPath: '/messages',
+      keyHint: '由Desktop受信任程序執行Claude OAuth登入（貼回授權碼）；Renderer不接觸token。',
+      defaultModels: ['claude-sonnet-4-6', 'claude-haiku-4-5'],
     }),
 
     [PROVIDER_IDS.APPLE_FOUNDATION_MODELS]: Object.freeze({
@@ -70,7 +85,7 @@
       baseUrl: '',
       modelsPath: '',
       chatPath: '',
-      keyHint: '僅在受信任的iOS native adapter確認Foundation Models可用時顯示。',
+      keyHint: '由受信任的macOS／iOS native adapter確認Foundation Models可用；不使用API Key或雲端fallback。',
       defaultModels: ['system-default'],
     }),
   });
@@ -82,9 +97,10 @@
   }
 
   function getProviderDefinition(providerId) {
-    const definition = PROVIDERS[providerId];
-    if (!definition) throw new Error('UNKNOWN_LLM_PROVIDER');
-    return copyDefinition(definition);
+    if (typeof providerId !== 'string' || !Object.hasOwn(PROVIDERS, providerId)) {
+      throw new Error('UNKNOWN_LLM_PROVIDER');
+    }
+    return copyDefinition(PROVIDERS[providerId]);
   }
 
   function listProviderDefinitions() {
@@ -104,9 +120,11 @@
     }
 
     if (providerId === PROVIDER_IDS.CHATGPT_SUBSCRIPTION
-        || providerId === PROVIDER_IDS.GROK_SUBSCRIPTION) {
+        || providerId === PROVIDER_IDS.GROK_SUBSCRIPTION
+        || providerId === PROVIDER_IDS.CLAUDE_SUBSCRIPTION) {
+      // Desktop (Electron Main) and the native iOS app; never Browser/PWA.
       const desktopPlatform = context.platform === 'desktop'
-        || context.platform === 'macos' || context.platform === 'windows';
+        || context.platform === 'macos' || context.platform === 'windows' || context.platform === 'ios';
       const advertised = Array.isArray(context.subscriptionProviders)
         && context.subscriptionProviders.includes(providerId);
       return desktopPlatform && advertised ? PROVIDER_STATES.AVAILABLE : PROVIDER_STATES.UNAVAILABLE;
@@ -115,7 +133,7 @@
     if (providerId === PROVIDER_IDS.APPLE_FOUNDATION_MODELS) {
       const advertised = Array.isArray(context.platformLocalProviders)
         && context.platformLocalProviders.includes(PROVIDER_IDS.APPLE_FOUNDATION_MODELS);
-      return context.platform === 'ios' && advertised ? PROVIDER_STATES.AVAILABLE : PROVIDER_STATES.UNAVAILABLE;
+      return ['ios', 'macos'].includes(context.platform) && advertised ? PROVIDER_STATES.AVAILABLE : PROVIDER_STATES.UNAVAILABLE;
     }
     return PROVIDER_STATES.UNAVAILABLE;
   }
@@ -135,7 +153,8 @@
     }
     const seen = new Set();
     const providers = value.providers.map(item => {
-      if (!exactKeys(item, ['id', 'state', 'authProduct']) || seen.has(item.id)
+      if (!exactKeys(item, ['id', 'state', 'authProduct'])
+          || typeof item.id !== 'string' || seen.has(item.id)
           || !Object.hasOwn(PROVIDERS, item.id) || !states.has(item.state)
           || item.authProduct !== PROVIDERS[item.id].authProduct) {
         throw new Error('INVALID_LLM_CAPABILITIES');
@@ -146,7 +165,47 @@
     return { protocol: 1, platform: value.platform, providers };
   }
 
+  const FM_REASONS = Object.freeze(['available', 'unsupported-platform', 'unsupported-os', 'device-not-eligible',
+    'intelligence-disabled', 'model-not-ready', 'unavailable', 'helper-missing', 'helper-integrity', 'helper-failed', 'busy']);
+  function fmObject(value, keys) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_FM_PAYLOAD');
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    if (Reflect.ownKeys(descriptors).length !== keys.length || keys.some(key => !descriptors[key]?.enumerable || !Object.hasOwn(descriptors[key], 'value'))) throw new Error('INVALID_FM_PAYLOAD');
+  }
+  function fmId(value) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(value)) throw new Error('INVALID_FM_PAYLOAD');
+    return value;
+  }
+  function normalizeFoundationModelsCapability(value) {
+    fmObject(value, ['protocol', 'platform', 'state', 'reason', 'sessionId']);
+    if (value.protocol !== 1 || !['macos', 'windows', 'desktop'].includes(value.platform)
+      || !['available', 'unavailable'].includes(value.state) || !FM_REASONS.includes(value.reason)
+      || (value.state === 'available') !== (value.reason === 'available')
+      || (value.state === 'available' && value.platform !== 'macos')) throw new Error('INVALID_FM_PAYLOAD');
+    return { protocol: 1, platform: value.platform, state: value.state, reason: value.reason, sessionId: fmId(value.sessionId) };
+  }
+  function normalizeFoundationModelsRequest(value) {
+    fmObject(value, ['sessionId', 'requestId', 'messages', 'maxTokens']);
+    const sessionId = fmId(value.sessionId), requestId = fmId(value.requestId);
+    if (!Number.isInteger(value.maxTokens) || value.maxTokens < 1 || value.maxTokens > 512
+      || !Array.isArray(value.messages) || value.messages.length < 1 || value.messages.length > 32) throw new Error('INVALID_FM_PAYLOAD');
+    let size = 0;
+    const messages = value.messages.map((item, i) => {
+      fmObject(item, ['role', 'content']);
+      if (!['system', 'user', 'assistant'].includes(item.role) || (item.role === 'system' && i !== 0)
+        || typeof item.content !== 'string' || !item.content.trim() || item.content.length > 8192) throw new Error('INVALID_FM_PAYLOAD');
+      // UTF-8 byte count without requiring Node or adding a browser dependency.
+      size += unescape(encodeURIComponent(item.content)).length;
+      if (size > 8192) throw new Error('INVALID_FM_PAYLOAD');
+      return { role: item.role, content: item.content };
+    });
+    if (messages[messages.length - 1].role !== 'user') throw new Error('INVALID_FM_PAYLOAD');
+    return { sessionId, requestId, messages, maxTokens: value.maxTokens };
+  }
+
   return Object.freeze({
+    normalizeFoundationModelsCapability,
+    normalizeFoundationModelsRequest,
     PROVIDER_IDS,
     PROVIDER_STATES,
     getProviderDefinition,

@@ -66,7 +66,7 @@
 
 - [ ] Windows UI中沒有retired Google browser account login入口或相關DOM。
 - [ ] 沒有Claude／Copilot subscription provider ID或generic OAuth bridge。
-- [ ] 沒有Hermes CLI proxy、consumer cookie/session scraping或Renderer token API。
+- [ ] 沒有外部 CLI proxy、consumer cookie/session scraping或Renderer token API。
 - [ ] Apple Foundation Models不在Windows provider清單中。
 
 ## 驗收結果格式

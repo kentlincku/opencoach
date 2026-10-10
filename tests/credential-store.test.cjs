@@ -13,10 +13,10 @@ function safeStorage(available = true) {
   };
 }
 
-async function fixture(t, available = true, namespace = 'api') {
+async function fixture(t, available = true) {
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'credential-store-'));
   t.after(() => fs.rm(userData, { recursive: true, force: true }));
-  return { userData, store: new CredentialStore({ userData, safeStorage: safeStorage(available), namespace }) };
+  return { userData, store: new CredentialStore({ userData, safeStorage: safeStorage(available) }) };
 }
 
 test('stores encrypted provider credential atomically without plaintext', async t => {
@@ -56,24 +56,4 @@ test('clear removes credential without returning plaintext', async t => {
   await store.set('groq', 'secret');
   assert.deepEqual(await store.clear('groq'), { cleared: true });
   assert.deepEqual(await store.has('groq'), { hasCredential: false });
-});
-
-test('stores encrypted subscription token bundles only for supported account providers', async t => {
-  const { userData, store } = await fixture(t, true, 'subscription');
-  for (const providerId of ['chatgpt-subscription', 'grok-subscription']) {
-    const bundle = JSON.stringify({ accessToken: `${providerId}-access`, refreshToken: `${providerId}-refresh` });
-    assert.deepEqual(await store.set(providerId, bundle), { stored: true });
-    assert.equal(await store.get(providerId), bundle);
-  }
-  assert.equal((await fs.readdir(path.join(userData, 'subscription-tokens'))).length, 2);
-  await assert.rejects(store.set('openai', 'blocked'), /PROVIDER_NOT_ALLOWED/);
-});
-
-test('default API namespace rejects subscription token providers', async t => {
-  const { store } = await fixture(t);
-  for (const providerId of ['chatgpt-subscription', 'grok-subscription']) {
-    await assert.rejects(store.set(providerId, '{"token":"blocked"}'), /PROVIDER_NOT_ALLOWED/);
-    await assert.rejects(store.has(providerId), /PROVIDER_NOT_ALLOWED/);
-    await assert.rejects(store.clear(providerId), /PROVIDER_NOT_ALLOWED/);
-  }
 });

@@ -7,7 +7,9 @@ import VoicePracticeCore
 public struct WebViewContainer: UIViewRepresentable {
     private let bridge: VoiceWebBridge
 
-    public init(bridge: VoiceWebBridge = VoiceWebBridge()) {
+    public init(bridge: VoiceWebBridge = VoiceWebBridge(openURL: { url in
+        await MainActor.run { UIApplication.shared.open(url) }
+    })) {
         self.bridge = bridge
     }
 
@@ -101,10 +103,14 @@ public struct WebViewContainer: UIViewRepresentable {
 
             // Expose native bridge adapter to shared index.html
             window.voiceNativeBridge = {
+                platform: "ios",
                 nativeSpeech: true,
+                nativeTranscription: true,
+                transcribe: function(payload) { return invokeBridge("speech.transcribe", payload); },
                 listSpeechVoices: function() { return invokeBridge("speech.voices", {}); },
                 speak: function(payload, onStart) { return invokeBridge("speech.speak", payload, onStart); },
                 stopSpeech: function() { return invokeBridge("speech.stop", {}); },
+                openSpeechSettings: function() { return invokeBridge("speech.openSettings", {}); },
                 appleFoundationModels: true,
                 providerOperation: function(payload) {
                     return invokeBridge(payload.operation, payload);
@@ -118,7 +124,14 @@ public struct WebViewContainer: UIViewRepresentable {
                 },
                 credentialClear: function(providerId, baseUrl) {
                     return invokeBridge("credential.clear", { providerId: providerId, baseUrl: baseUrl });
-                }
+                },
+                subscriptions: true,
+                subscriptionBeginLogin: function(providerId) { return invokeBridge("subscription.begin", { providerId: providerId }); },
+                subscriptionPollLogin: function(loginId) { return invokeBridge("subscription.poll", { loginId: loginId }); },
+                subscriptionCompleteLogin: function(loginId, code) { return invokeBridge("subscription.complete", { loginId: loginId, code: code }); },
+                subscriptionCancelLogin: function(loginId) { return invokeBridge("subscription.cancel", { loginId: loginId }); },
+                subscriptionStatus: function(providerId) { return invokeBridge("subscription.status", { providerId: providerId }); },
+                subscriptionLogout: function(providerId) { return invokeBridge("subscription.logout", { providerId: providerId }); }
             };
         })();
         """
@@ -140,6 +153,8 @@ public struct WebViewContainer: UIViewRepresentable {
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         coordinator.handler = scriptHandler
         webView.navigationDelegate = coordinator
+        // Without a UI delegate WKWebView drops alert()/confirm() (confirm returns false).
+        webView.uiDelegate = coordinator
         scriptHandler.webView = webView
 
         // Load bundled web app from Resources
@@ -167,8 +182,31 @@ public struct WebViewContainer: UIViewRepresentable {
         Coordinator()
     }
 
-    public class Coordinator: NavigationPolicyCoordinator, UIScrollViewDelegate {
+    public class Coordinator: NavigationPolicyCoordinator, UIScrollViewDelegate, WKUIDelegate {
         public func viewForZooming(in scrollView: UIScrollView) -> UIView? { nil }
+
+        private func presenter(for webView: WKWebView) -> UIViewController? {
+            var top = webView.window?.rootViewController
+            while let next = top?.presentedViewController { top = next }
+            return top
+        }
+
+        public func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                            initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            guard frame.isMainFrame, let host = presenter(for: webView) else { return completionHandler() }
+            let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler() })
+            host.present(alert, animated: true)
+        }
+
+        public func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                            initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            guard frame.isMainFrame, let host = presenter(for: webView) else { return completionHandler(false) }
+            let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(false) })
+            alert.addAction(UIAlertAction(title: "確定", style: .default) { _ in completionHandler(true) })
+            host.present(alert, animated: true)
+        }
 
         public func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
             scrollView.pinchGestureRecognizer?.isEnabled = false

@@ -1,6 +1,13 @@
 appId: com.kentlin.voicepractice
 productName: Voice Practice
 asar: true
+# Ship only the English and Traditional Chinese Electron/Chromium locales (220 otherwise, ~70 MB).
+electronLanguages:
+  - en
+  - zh_TW
+beforePack: scripts/build-foundation-models.cjs
+afterPack: scripts/verify-foundation-models-bundle.cjs
+afterSign: scripts/verify-foundation-models-bundle.cjs
 directories:
   output: dist
   buildResources: build
@@ -8,26 +15,31 @@ files:
   - package.json
   - apps/desktop/**
   - apps/web/**
-  - resources/**
+  - node_modules/pend/**
+  - node_modules/yauzl/**
 extraResources:
   - from: resources
     to: manifests
     filter:
       - "*.json"
 mac:
+  extraResources:
+    - from: build/r22-provenance/build-source.json
+      to: build-source.json
+    - from: build/foundation-models/arm64
+      to: foundation-models
+      filter:
+        - voice-foundation-models
+        - manifest.json
+  binaries:
+    - Contents/Resources/foundation-models/voice-foundation-models
   category: public.app-category.education
   icon: build/icon.icns
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
-  extraResources:
-    - from: dist/voice-runtime
-      to: runtime
-      filter:
-        - "**/*"
-        - "!**/*.pyc"
-        - "!**/__pycache__"
+  identity: null
   target:
     - target: dmg
       arch:

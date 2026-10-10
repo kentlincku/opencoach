@@ -1,4 +1,4 @@
-numpy
-soundfile
-faster-whisper
-kokoro-onnx
+# THIRD-PARTY/BUILD GRAPH ONLY, not a complete speech runtime.
+# Use scripts/setup-windows.ps1 with an approved bundle, digest and offline wheelhouse.
+# It installs the generated full install.lock.txt including the private resource wheel.
+-r ../../spikes/packaged-runtime/requirements-windows-x64.lock.txt

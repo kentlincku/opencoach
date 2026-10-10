@@ -4,18 +4,18 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const PROVIDER_NAMESPACES = Object.freeze({
-  api: Object.freeze({ directory: 'provider-credentials', providers: new Set(['claude', 'openai', 'gemini', 'groq', 'deepseek', 'custom']) }),
-  subscription: Object.freeze({ directory: 'subscription-tokens', providers: new Set(['chatgpt-subscription', 'grok-subscription']) }),
-});
-const MAX_CREDENTIAL_CHARS = 16 * 1024;
+const ALLOWED_CREDENTIAL_PROVIDERS = new Set(['claude', 'openai', 'gemini', 'groq', 'deepseek', 'custom',
+  'chatgpt-subscription', 'grok-subscription', 'claude-subscription']);
+const MAX_CREDENTIAL_CHARS = 64 * 1024;
+
+function assertProvider(providerId) {
+  if (!ALLOWED_CREDENTIAL_PROVIDERS.has(providerId)) throw new Error('PROVIDER_NOT_ALLOWED');
+}
 
 class CredentialStore {
-  constructor({ userData, safeStorage, fsImpl = fs, namespace = 'api' }) {
-    const policy = PROVIDER_NAMESPACES[namespace];
-    if (!userData || !safeStorage || !policy) throw new Error('INVALID_CREDENTIAL_STORE_CONFIG');
-    this.directory = path.join(userData, policy.directory);
-    this.allowedProviders = policy.providers;
+  constructor({ userData, safeStorage, fsImpl = fs }) {
+    if (!userData || !safeStorage) throw new Error('INVALID_CREDENTIAL_STORE_CONFIG');
+    this.directory = path.join(userData, 'provider-credentials');
     this.safeStorage = safeStorage;
     this.fs = fsImpl;
   }
@@ -25,7 +25,7 @@ class CredentialStore {
   }
 
   filePath(providerId) {
-    if (!this.allowedProviders.has(providerId)) throw new Error('PROVIDER_NOT_ALLOWED');
+    assertProvider(providerId);
     return path.join(this.directory, `${providerId}.json`);
   }
 
@@ -91,4 +91,4 @@ class CredentialStore {
   }
 }
 
-module.exports = { CredentialStore };
+module.exports = { CredentialStore, ALLOWED_CREDENTIAL_PROVIDERS };

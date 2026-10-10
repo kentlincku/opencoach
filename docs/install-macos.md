@@ -1,38 +1,56 @@
 # Install on macOS (Apple Silicon beta)
 
-A release must contain both DMG/ZIP and `SHA256SUMS.txt`. Verify the checksum before opening. Drag **Voice Practice.app** to Applications. Engineering pre-releases are not signed or notarized, so Gatekeeper blocks the first launch; only open them if you trust the build and have verified the checksum (System Settings → Privacy & Security → Open Anyway). Microphone access is requested only when recording.
+OpenCoach v0.3.0-beta.1 is an unsigned engineering pre-release for Apple Silicon Macs (arm64), macOS 13 or later.
 
-## Desktop Lite with oMLX
+## Download and verify
 
-macOS Electron App connects directly to local oMLX via a secure Main Process IPC broker, without Safari Mixed Content, CORS, or Local Network Access dialogs:
+1. From the GitHub release, download `Voice-Practice-0.3.0-beta.1-arm64.dmg` (or the `.zip`) and `SHA256SUMS.txt`.
+2. Verify the checksum before opening:
+   ```bash
+   shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+   ```
+3. Open the DMG and drag **Voice Practice.app** to Applications.
 
-1. Start oMLX listening on `127.0.0.1:8000` (default loopback).
-2. Open Settings in Voice Practice.
-3. In Direct API presets, choose **oMLX（這台Mac）** (`http://127.0.0.1:8000/v1`).
-4. API Key is not required for local endpoints and may remain blank.
-5. Click **從端點取得模型** to fetch available models. If connection is refused, confirm oMLX is running on port 8000 listening on `127.0.0.1`.
+## First launch (Gatekeeper)
 
-## Embedded Native Voice Runtime (Apple Silicon)
+The App is ad-hoc signed by the public build workflow and is **not signed with an Apple Developer ID or notarized**. macOS therefore blocks the first launch:
 
-Engineering builds embed the verified Apple Silicon standalone voice runtime (MLX Whisper & Kokoro) directly inside the App bundle (`Voice Practice.app/Contents/Resources/runtime`). Packaged desktop applications use this embedded runtime out-of-the-box without requiring external network downloads or global Python environments.
+1. Open **Voice Practice** from Applications. macOS shows "Apple could not verify 'Voice Practice' is free of malware…". Choose **Done** (not *Move to Trash*).
+2. Open **System Settings → Privacy & Security**. Near the bottom it says "'Voice Practice' was blocked to protect your Mac." Click **Open Anyway** and confirm with your password or Touch ID.
+3. Choose **Open** in the final prompt. Later launches open normally.
 
-## Local Build & Packaging
+Do not disable Gatekeeper system-wide. Only open a build whose checksum you verified. If macOS instead says the App "is damaged", the download is incomplete or modified: delete it and download it again.
 
-You can build and package the macOS arm64 DMG and ZIP locally:
+Microphone and speech-recognition access are requested only when you start recording.
+
+## Speech models (downloaded in the App)
+
+The App contains the voice runtime but **no speech model weights**. Open **Settings → speech models** and install:
+
+- one speech-to-text model (Whisper tiny / base / small / large-v3-turbo, MLX format, from Hugging Face), and
+- the Kokoro text-to-speech model (from GitHub).
+
+Each download is pinned to an exact upstream revision, shows its size and license before you agree, and is verified by SHA-256 before use. Once installed, models are reused offline. Until both are ready you can still type to the coach.
+
+## Connect a local LLM (oMLX example)
+
+1. Start oMLX (or another OpenAI-compatible server) listening on `127.0.0.1:8000`.
+2. In **Settings**, choose the **oMLX（這台Mac）** preset (`http://127.0.0.1:8000/v1`). Local endpoints need no API key.
+3. Click **從端點取得模型** to fetch the model list, pick a model, and save.
+
+## Build it yourself
+
+The release workflow builds the App from pinned public sources only. You can run the same pipeline locally (about 20–30 minutes; needs Xcode command-line tools, Node 22, Python 3.11 and `uv`):
 
 ```bash
 npm ci
 npm run build:icons
-bash scripts/build-macos-runtime.sh   # embedded voice runtime (requires uv)
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run pack:mac
-node scripts/check-macos-runtime.mjs --app "dist/mac-arm64/Voice Practice.app"
-node scripts/write-checksums.mjs dist
+bash scripts/ci-pack-macos.sh "$PWD/.build/mac"
+# outputs: .build/mac/release/Voice-Practice-<version>-arm64.dmg and .zip
 ```
 
-Packaged artifacts will be placed in `dist/`:
-- `Voice-Practice-0.2.0-beta.1-arm64.dmg`
-- `Voice-Practice-0.2.0-beta.1-arm64.zip`
-- `dist/mac-arm64/Voice Practice.app`
-- `SHA256SUMS.txt`
+`scripts/ci-build-macos-runtime.py` fetches every runtime input listed in `spikes/packaged-runtime/r56-acquisition.lock.json` and checks its size and SHA-256 before use.
 
-To uninstall, quit the app, remove it from Applications, then optionally remove its user-data directory to delete downloaded runtimes/models. This also removes local app settings.
+## Uninstall
+
+Quit the App and delete it from Applications. To also remove downloaded models and settings, delete `~/Library/Application Support/Voice Practice`.

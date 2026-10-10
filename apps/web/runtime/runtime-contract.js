@@ -5,9 +5,9 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function createRuntimeContract() {
   'use strict';
 
-  const SUPPORTED_STT_BACKENDS = new Set(['fake', 'mlx-whisper', 'faster-whisper', 'android-on-device-speech']);
-  const SUPPORTED_TTS_BACKENDS = new Set(['fake', 'kokoro-python', 'kokoro-onnx', 'android-tts-local']);
-  const SUPPORTED_EXECUTION_PROVIDERS = new Set(['CPUExecutionProvider', 'DmlExecutionProvider']);
+  const SUPPORTED_STT_BACKENDS = new Set(['fake', 'mlx-whisper', 'faster-whisper']);
+  const SUPPORTED_TTS_BACKENDS = new Set(['fake', 'kokoro-python', 'kokoro-onnx']);
+  const SUPPORTED_EXECUTION_PROVIDERS = new Set(['CPUExecutionProvider', 'DmlExecutionProvider', 'CUDAExecutionProvider']);
   const CAPABILITY_FIELDS = new Set([
     'protocol', 'platform', 'arch', 'sttBackends', 'ttsBackends',
     'selectedStt', 'selectedTts', 'ready', 'degradedReason',
@@ -40,6 +40,7 @@
       return degradedCapabilities('INVALID_CAPABILITY_RESPONSE');
     }
 
+    const executionProvider = Object.hasOwn(raw, 'executionProvider') ? raw.executionProvider : null;
     const requiredShapeIsValid = Object.keys(raw).every(key => CAPABILITY_FIELDS.has(key))
       && Number.isInteger(raw.protocol)
       && typeof raw.platform === 'string' && raw.platform.length > 0
@@ -53,8 +54,7 @@
       && (!Object.hasOwn(raw, 'fake') || typeof raw.fake === 'boolean')
       && (!Object.hasOwn(raw, 'capabilities') || isValidBackendList(raw.capabilities))
       && (!Object.hasOwn(raw, 'whisperModel') || typeof raw.whisperModel === 'string')
-      && (!Object.hasOwn(raw, 'executionProvider') || raw.executionProvider === null
-        || SUPPORTED_EXECUTION_PROVIDERS.has(raw.executionProvider));
+      && (executionProvider === null || SUPPORTED_EXECUTION_PROVIDERS.has(executionProvider));
 
     if (!requiredShapeIsValid) {
       return degradedCapabilities('INVALID_CAPABILITY_RESPONSE', raw);
@@ -92,13 +92,11 @@
       selectedTts: raw.selectedTts,
       ready: raw.ready,
       degradedReason: raw.degradedReason,
-      executionProvider: raw.executionProvider ?? null,
+      executionProvider,
     });
   }
 
   return Object.freeze({
     normalizeRuntimeCapabilities,
-    supportedSttBackends: Object.freeze([...SUPPORTED_STT_BACKENDS]),
-    supportedTtsBackends: Object.freeze([...SUPPORTED_TTS_BACKENDS]),
   });
 }));

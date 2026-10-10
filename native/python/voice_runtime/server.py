@@ -31,14 +31,6 @@ else:  # Support the Electron launcher executing this file directly.
 PROTOCOL_VERSION = 1
 FAKE = os.environ.get("VOICE_RUNTIME_FAKE") == "1"
 DEBUG = os.environ.get("VOICE_RUNTIME_DEBUG") == "1"
-
-try:
-    sys.stdin.reconfigure(encoding="utf-8")
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
-except Exception:
-    pass
-
 _RUNTIME_TEMP = os.environ.get("VOICE_RUNTIME_TEMP_DIR")
 if not _RUNTIME_TEMP and not FAKE:
     raise RuntimeError("VOICE_RUNTIME_TEMP_DIR_REQUIRED")
@@ -85,7 +77,16 @@ def create_backend_registry(
     )
 
 
-backend_registry = create_backend_registry()
+# Bootstrap/probe has no dependency discovery or asset lookup. The actual
+# health/speech consumers keep their existing registry and resource admission.
+backend_registry = None
+
+
+def _registry():
+    global backend_registry
+    if backend_registry is None:
+        backend_registry = create_backend_registry()
+    return backend_registry
 
 
 def health_capabilities(
@@ -104,7 +105,7 @@ def health_capabilities(
                 availability=availability,
             )
         else:
-            selected_registry = backend_registry
+            selected_registry = _registry()
     capabilities = selected_registry.capabilities()
     selected_stt = capabilities["selectedStt"]
     selected_tts = capabilities["selectedTts"]
@@ -134,6 +135,17 @@ def health_capabilities(
     }
 
 
+def runtime_probe() -> dict[str, Any]:
+    """Executable protocol compatibility only; no model/health initialization."""
+    return {
+        "probeVersion": 1,
+        "protocol": PROTOCOL_VERSION,
+        "platform": runtime_platform(),
+        "arch": runtime_arch(),
+        "executable": True,
+    }
+
+
 def _params_object(params: Any) -> dict[str, Any]:
     if not isinstance(params, dict):
         raise BackendInputError("INVALID_PARAMS")
@@ -142,6 +154,10 @@ def _params_object(params: Any) -> dict[str, Any]:
 
 def dispatch(method: str, params: Any) -> dict[str, Any]:
     params = _params_object(params)
+    if method == "runtime.probe":
+        if params:
+            raise BackendInputError("INVALID_PROBE_PARAMS")
+        return runtime_probe()
     if method == "runtime.health":
         return health_capabilities()
     if method == "tts.synthesize":
@@ -154,7 +170,7 @@ def dispatch(method: str, params: Any) -> dict[str, Any]:
             raise BackendInputError("INVALID_VOICE")
         if isinstance(speed, bool) or not isinstance(speed, (int, float)):
             raise BackendInputError("INVALID_SPEED")
-        return backend_registry.synthesize(
+        return _registry().synthesize(
             text,
             voice,
             float(speed),
@@ -166,7 +182,7 @@ def dispatch(method: str, params: Any) -> dict[str, Any]:
             raise BackendInputError("INVALID_AUDIO_PATH")
         if not isinstance(language, str):
             raise BackendInputError("INVALID_LANGUAGE")
-        return backend_registry.transcribe(
+        return _registry().transcribe(
             audio_path,
             normalize_language(language),
         )
@@ -182,7 +198,17 @@ def public_error_payload(error: Exception) -> dict[str, str]:
     return {"code": "INTERNAL_ERROR", "message": "INTERNAL_ERROR"}
 
 
+def _utf8_stdio() -> None:
+    # The JSON-RPC pipes are UTF-8 (Node writes UTF-8). On Windows Python otherwise
+    # decodes them with the ANSI code page (e.g. cp950), turning "—" into mojibake
+    # that the English G2P rejects.
+    for stream in (sys.stdin, sys.stdout):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            stream.reconfigure(encoding="utf-8")
+
+
 def serve() -> None:
+    _utf8_stdio()
     emit({"event": "ready", "protocol": PROTOCOL_VERSION})
     for raw_line in sys.stdin:
         request_id = None
@@ -197,7 +223,6 @@ def serve() -> None:
             method = request.get("method")
             if not isinstance(method, str):
                 raise BackendInputError("INVALID_METHOD")
-            log(f"REQUEST_STARTED:{request_id}:{method}")
             result = dispatch(method, request.get("params", {}))
             emit({"id": request_id, "success": True, "result": result})
         except Exception as error:

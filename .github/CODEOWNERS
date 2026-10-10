@@ -13,7 +13,6 @@
 
 # Native mobile platforms
 /apps/ios/ @kentlincku
-/apps/android/ @kentlincku
 
 # CI, release, and synchronization policy
 /.github/workflows/ @kentlincku

@@ -43,12 +43,43 @@ class MLXWhisperBackend(STTBackend):
             self._transcriber = mlx_whisper.transcribe
         return self._transcriber
 
+    def _local_model_path(self) -> Path:
+        try:
+            model = Path(self.model_id)
+            if not model.is_absolute() or not model.is_dir():
+                raise ValueError("local directory required")
+            model = model.resolve(strict=True)
+            # Bounded layout admission only, not model validity or hash binding.
+            # Reject symlinks/special files without opening potentially huge weights.
+            import stat
+
+            config = (model / "config.json").lstat()
+            if not stat.S_ISREG(config.st_mode) or config.st_size == 0:
+                raise ValueError("local configuration required")
+            # Match upstream load_models.py precedence; an invalid preferred file
+            # must not be bypassed in favour of a lower-priority weight file.
+            for name in ("model.safetensors", "weights.safetensors", "weights.npz"):
+                try:
+                    weights = (model / name).lstat()
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISREG(weights.st_mode) or weights.st_size == 0:
+                    raise ValueError("local weights required")
+                return model
+            raise ValueError("local weights required")
+        except (OSError, ValueError, RuntimeError):
+            raise BackendUnavailableError("stt", "mlx-whisper", "LOCAL_MODEL_REQUIRED") from None
+
     def transcribe(self, audio_path: str, language: str = "en") -> dict[str, Any]:
         path = validate_audio_path(audio_path, self.allowed_audio_root)
         language = normalize_language(language)
+        model = self._local_model_path()
+        from ..wav_decoder import decode_wav
+
+        samples = decode_wav(path)
         result = self._get_transcriber()(
-            str(path),
-            path_or_hf_repo=self.model_id,
+            samples,
+            path_or_hf_repo=str(model),
             language=language,
             condition_on_previous_text=False,
             temperature=0.0,

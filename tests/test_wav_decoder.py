@@ -1,194 +1,198 @@
-import io
+"""Real WAV/NumPy tests; only the inference model boundary is doubled."""
 import struct
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-try:
-    import numpy as np
-    HAVE_NUMPY = True
-except ImportError:
-    np = None
-    HAVE_NUMPY = False
+import numpy as np
 
 from native.python.voice_runtime.backends.base import BackendInputError
-from native.python.voice_runtime.wav_decoder import parse_pcm_wav_bytes, read_pcm_wav
+from native.python.voice_runtime.backends.faster_whisper import FasterWhisperBackend
+from native.python.voice_runtime.wav_decoder import decode_wav
 
 
-def make_wav_bytes(
-    sample_rate: int = 16000,
-    channels: int = 1,
-    bits_per_sample: int = 16,
-    audio_format: int = 1,
-    num_samples: int = 160,
-    truncate_data_by: int = 0,
-    omit_fmt: bool = False,
-    omit_data: bool = False,
-    corrupt_riff: bool = False,
-) -> bytes:
-    buf = io.BytesIO()
-    # Placeholder for RIFF header
-    buf.write(b"RIFF\x00\x00\x00\x00WAVE")
-
-    if not omit_fmt:
-        fmt_data = struct.pack(
-            "<HHIIHH",
-            audio_format,
-            channels,
-            sample_rate,
-            sample_rate * channels * (bits_per_sample // 8),
-            channels * (bits_per_sample // 8),
-            bits_per_sample,
-        )
-        buf.write(b"fmt ")
-        buf.write(struct.pack("<I", len(fmt_data)))
-        buf.write(fmt_data)
-
-    if not omit_data:
-        data_bytes_len = num_samples * channels * (bits_per_sample // 8)
-        buf.write(b"data")
-        buf.write(struct.pack("<I", data_bytes_len))
-        raw = b"\x00" * data_bytes_len
-        if truncate_data_by > 0:
-            raw = raw[:-truncate_data_by]
-        buf.write(raw)
-
-    data = bytearray(buf.getvalue())
-    file_size_minus_8 = len(data) - 8
-    data[4:8] = struct.pack("<I", file_size_minus_8)
-
-    if corrupt_riff:
-        data[0:4] = b"NOPE"
-
-    return bytes(data)
+def chunk(tag, payload):
+    return tag + struct.pack("<I", len(payload)) + payload + b"\0" * (len(payload) % 2)
 
 
-@unittest.skipUnless(HAVE_NUMPY, "NumPy not available in source test environment")
-class TestWavDecoder(unittest.TestCase):
-    def test_valid_mono_pcm_wav(self):
-        wav_data = make_wav_bytes(sample_rate=16000, channels=1, bits_per_sample=16, num_samples=320)
-        samples = parse_pcm_wav_bytes(wav_data)
+def riff(*chunks):
+    body = b"WAVE" + b"".join(chunks)
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+def fmt(*, tag=1, channels=1, rate=16000, bits=16, align=None, byte_rate=None):
+    align = channels * (bits // 8) if align is None else align
+    byte_rate = rate * align if byte_rate is None else byte_rate
+    return struct.pack("<HHIIHH", tag, channels, rate, byte_rate, align, bits)
+
+
+def wav(samples=(0, 16384), *, channels=1):
+    return riff(chunk(b"fmt ", fmt(channels=channels)),
+                chunk(b"data", struct.pack("<" + "h" * len(samples), *samples)))
+
+
+class WavDecoderTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "input.wav"
+        self.loads = []
+        self.calls = []
+
+        def transcribe(audio, **kwargs):
+            self.calls.append((audio, kwargs))
+            return [SimpleNamespace(text=" decoded ")], None
+
+        def factory(model, **kwargs):
+            self.loads.append((model, kwargs))
+            return SimpleNamespace(transcribe=transcribe, supported_languages=["en", "zh"])
+
+        self.backend = FasterWhisperBackend(
+            model_id="base", allowed_audio_root=self.root, model_factory=factory,
+            device="cuda", compute_type="float16")
+
+    def assert_audio(self, samples, expected):
         self.assertIsInstance(samples, np.ndarray)
         self.assertEqual(samples.dtype, np.float32)
-        self.assertEqual(len(samples), 320)
-        self.assertTrue(-1.0 <= samples.min() <= 1.0)
-        self.assertTrue(-1.0 <= samples.max() <= 1.0)
+        self.assertEqual(samples.shape, (len(expected),))
+        self.assertTrue(samples.flags.c_contiguous)
+        np.testing.assert_array_equal(samples, np.array(expected, dtype=np.float32))
 
-    def test_valid_stereo_handling(self):
-        # Stereo audio with left=1000, right=2000
-        num_frames = 100
-        left = (np.ones(num_frames, dtype=np.int16) * 1000).tobytes()
-        right = (np.ones(num_frames, dtype=np.int16) * 3000).tobytes()
-        interleaved = bytearray()
-        for i in range(num_frames):
-            interleaved.extend(left[i*2:(i+1)*2])
-            interleaved.extend(right[i*2:(i+1)*2])
+    def assert_rejected(self, payload, code="INVALID_WAV"):
+        self.path.write_bytes(payload)
+        with self.assertRaisesRegex(BackendInputError, "^" + code + "$"):
+            self.backend.transcribe(str(self.path), "en")
+        self.assertEqual(self.loads, [], "Invalid input must not initialize a model")
+        self.assertEqual(self.calls, [])
 
-        buf = io.BytesIO()
-        buf.write(b"RIFF\x00\x00\x00\x00WAVE")
-        fmt = struct.pack("<HHIIHH", 1, 2, 16000, 16000*4, 4, 16)
-        buf.write(b"fmt " + struct.pack("<I", len(fmt)) + fmt)
-        buf.write(b"data" + struct.pack("<I", len(interleaved)) + bytes(interleaved))
-        data = bytearray(buf.getvalue())
-        data[4:8] = struct.pack("<I", len(data) - 8)
+    def test_riff_structure_is_strict_before_model_creation(self):
+        canonical = wav()
+        format_chunk = chunk(b"fmt ", fmt())
+        data_chunk = chunk(b"data", b"\0\0\0\x40")
+        cases = {
+            "wrong-riff": b"RIFX" + canonical[4:],
+            "wrong-wave": canonical[:8] + b"AVI " + canonical[12:],
+            "trailing-bytes": canonical + b"x",
+            "riff-size-small": canonical[:4] + struct.pack("<I", 4) + canonical[8:],
+            "riff-size-huge": canonical[:4] + struct.pack("<I", 0xffffffff) + canonical[8:],
+            "missing-fmt": riff(data_chunk),
+            "missing-data": riff(format_chunk),
+            "data-before-fmt": riff(data_chunk, format_chunk),
+            "duplicate-fmt": riff(format_chunk, format_chunk, data_chunk),
+            "duplicate-data": riff(format_chunk, data_chunk, data_chunk),
+            "short-fmt": riff(chunk(b"fmt ", b"\0" * 14), data_chunk),
+            "empty-data": riff(format_chunk, chunk(b"data", b"")),
+            "partial-mono-frame": riff(format_chunk, chunk(b"data", b"\0")),
+            "partial-stereo-frame": riff(chunk(b"fmt ", fmt(channels=2)), chunk(b"data", b"\0\0")),
+            "huge-chunk": riff(format_chunk, b"data\xff\xff\xff\xff"),
+            "incomplete-chunk-header": riff(format_chunk, data_chunk, b"JUNK\0"),
+            "missing-odd-padding": riff(format_chunk, data_chunk, b"JUNK\x01\0\0\0x"),
+        }
+        cases.update({f"truncated-at-{i}": canonical[:i] for i in range(len(canonical))})
+        for name, payload in cases.items():
+            with self.subTest(name=name):
+                self.assert_rejected(payload)
 
-        samples = parse_pcm_wav_bytes(bytes(data))
-        self.assertEqual(len(samples), num_frames)
-        # Average of (1000 + 3000) / 2 = 2000. Normalized: 2000 / 32768.0 = 0.061035156
-        expected_val = 2000.0 / 32768.0
-        np.testing.assert_allclose(samples[0], expected_val, rtol=1e-4)
+    def test_padded_unknown_chunks_and_trailing_metadata_preserve_pcm(self):
+        self.path.write_bytes(riff(
+            chunk(b"JUNK", b"odd"), chunk(b"fmt ", fmt()), chunk(b"LIST", b"info"),
+            chunk(b"data", b"\0\x80\xff\x7f"), chunk(b"JUNK", b"x")))
+        self.assert_audio(decode_wav(self.path), [-1, 32767 / 32768])
 
-    def test_malformed_riff_header(self):
-        bad_data = make_wav_bytes(corrupt_riff=True)
-        with self.assertRaisesRegex(BackendInputError, "MALFORMED_RIFF_HEADER"):
-            parse_pcm_wav_bytes(bad_data)
+    def test_unsupported_formats_are_rejected_without_model_creation(self):
+        pcm_guid = bytes.fromhex("0100000000001000800000aa00389b71")
+        cases = {
+            "float": fmt(tag=3), "compressed": fmt(tag=6),
+            "extensible-pcm": fmt(tag=0xfffe) + struct.pack("<HHI", 22, 16, 4) + pcm_guid,
+            "zero-channels": fmt(channels=0), "three-channels": fmt(channels=3),
+            "rate-8k": fmt(rate=8000), "rate-44k": fmt(rate=44100), "rate-zero": fmt(rate=0),
+            "8-bit": fmt(bits=8), "24-bit": fmt(bits=24), "32-bit": fmt(bits=32),
+            "wrong-align": fmt(align=4), "wrong-byte-rate": fmt(byte_rate=1),
+            "stereo-wrong-align": fmt(channels=2, align=2),
+            "short-extension": fmt() + b"\0", "nonzero-extension": fmt() + b"\x01\0",
+            "extra-extension": fmt() + b"\x02\0\0\0",
+        }
+        for name, format_bytes in cases.items():
+            with self.subTest(name=name):
+                self.assert_rejected(riff(chunk(b"fmt ", format_bytes), chunk(b"data", b"\0" * 12)),
+                                     "UNSUPPORTED_WAV_FORMAT")
 
-        with self.assertRaisesRegex(BackendInputError, "MALFORMED_RIFF_HEADER"):
-            parse_pcm_wav_bytes(b"short")
+    def test_pcm_with_zero_length_extension_is_supported(self):
+        self.path.write_bytes(riff(chunk(b"fmt ", fmt() + b"\0\0"), chunk(b"data", b"\0\x40")))
+        self.assert_audio(decode_wav(self.path), [0.5])
 
-    def test_missing_fmt_chunk(self):
-        bad_data = make_wav_bytes(omit_fmt=True)
-        with self.assertRaisesRegex(BackendInputError, "MISSING_FMT_CHUNK"):
-            parse_pcm_wav_bytes(bad_data)
+    def test_path_and_language_authority_precedes_decoder_and_model(self):
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir) / "invalid.wav"
+            outside.write_bytes(b"not WAV")
+            for path in (outside, self.root / ".." / Path(outside_dir).name / "invalid.wav"):
+                with self.subTest(path=path):
+                    with self.assertRaisesRegex(BackendInputError, "AUDIO_PATH_OUTSIDE_RUNTIME_TEMP"):
+                        self.backend.transcribe(str(path), "en")
+        for path in (self.root, self.root / "missing.wav"):
+            with self.assertRaisesRegex(BackendInputError, "AUDIO_FILE_NOT_FOUND"):
+                self.backend.transcribe(str(path), "en")
+        self.path.write_bytes(b"not WAV")
+        with self.assertRaisesRegex(BackendInputError, "INVALID_LANGUAGE"):
+            self.backend.transcribe(str(self.path), "../../secret")
+        self.backend.model_id = "BASE.EN"
+        with self.assertRaisesRegex(BackendInputError, "INVALID_WAV"):
+            self.backend.transcribe(str(self.path), "zh-TW")
+        self.assertEqual(self.loads, [])
+        self.assertEqual(self.calls, [])
 
-    def test_missing_data_chunk(self):
-        bad_data = make_wav_bytes(omit_data=True)
-        with self.assertRaisesRegex(BackendInputError, "MISSING_DATA_CHUNK"):
-            parse_pcm_wav_bytes(bad_data)
+    def test_file_byte_limit_is_inclusive_and_checked_before_parsing(self):
+        limit = 25 * 1024 * 1024
+        canonical = wav()
+        header = canonical[:4] + struct.pack("<I", limit - 8) + canonical[8:]
+        with self.path.open("wb") as stream:
+            stream.write(header)
+            stream.write(b"JUNK" + struct.pack("<I", limit - len(canonical) - 8))
+            stream.seek(limit - 1)
+            stream.write(b"\0")
+        self.assert_audio(decode_wav(self.path), [0, 0.5])
+        with self.path.open("ab") as stream:
+            stream.write(b"\0")
+        with self.assertRaisesRegex(BackendInputError, "^AUDIO_PAYLOAD_TOO_LARGE$"):
+            self.backend.transcribe(str(self.path), "en")
+        self.assertEqual(self.loads, [])
+        self.assertEqual(self.calls, [])
 
-    def test_unsupported_encoding_float(self):
-        # Format 3 = IEEE float
-        bad_data = make_wav_bytes(audio_format=3, bits_per_sample=32)
-        with self.assertRaisesRegex(BackendInputError, "UNSUPPORTED_ENCODING"):
-            parse_pcm_wav_bytes(bad_data)
+    def test_model_failures_do_not_change_device_policy_or_fall_back(self):
+        self.path.write_bytes(wav())
+        attempts = []
 
-    def test_unsupported_encoding_alaw(self):
-        # Format 6 = A-law
-        bad_data = make_wav_bytes(audio_format=6, bits_per_sample=8)
-        with self.assertRaisesRegex(BackendInputError, "UNSUPPORTED_ENCODING"):
-            parse_pcm_wav_bytes(bad_data)
+        def fail_model(model, **kwargs):
+            attempts.append((model, kwargs))
+            raise RuntimeError("model boundary failure")
 
-    def test_unsupported_sample_rate(self):
-        # 44100 Hz must be rejected, not silently misinterpreted
-        bad_data = make_wav_bytes(sample_rate=44100)
-        with self.assertRaisesRegex(BackendInputError, "UNSUPPORTED_SAMPLE_RATE: 44100"):
-            parse_pcm_wav_bytes(bad_data)
+        backend = FasterWhisperBackend(
+            model_id="base", allowed_audio_root=self.root, model_factory=fail_model,
+            device="auto", compute_type="int8")
+        with self.assertRaisesRegex(RuntimeError, "^model boundary failure$"):
+            backend.transcribe(str(self.path), "en")
+        self.assertEqual(attempts, [("base", {"device": "auto", "compute_type": "int8"})])
 
-        # 8000 Hz must be rejected
-        bad_data2 = make_wav_bytes(sample_rate=8000)
-        with self.assertRaisesRegex(BackendInputError, "UNSUPPORTED_SAMPLE_RATE: 8000"):
-            parse_pcm_wav_bytes(bad_data2)
+    def test_invalid_wav_after_warm_model_is_not_sent_to_model(self):
+        self.path.write_bytes(wav())
+        self.backend.transcribe(str(self.path), "en")
+        self.path.write_bytes(b"invalid")
+        with self.assertRaisesRegex(BackendInputError, "^INVALID_WAV$"):
+            self.backend.transcribe(str(self.path), "en")
+        self.assertEqual(len(self.loads), 1)
+        self.assertEqual(len(self.calls), 1)
 
-    def test_truncated_chunk(self):
-        # Data chunk declares 320 bytes, but has 10 bytes missing
-        bad_data = make_wav_bytes(truncate_data_by=10)
-        with self.assertRaisesRegex(BackendInputError, "TRUNCATED_WAV_CHUNK"):
-            parse_pcm_wav_bytes(bad_data)
-
-    def test_traversal_and_allowed_root_rejection(self):
-        with tempfile.TemporaryDirectory() as temp_root_str:
-            temp_root = Path(temp_root_str).resolve()
-            valid_file = temp_root / "test.wav"
-            valid_file.write_bytes(make_wav_bytes())
-
-            # Valid inside root
-            samples = read_pcm_wav(str(valid_file), temp_root)
-            self.assertEqual(len(samples), 160)
-
-            # Outside root
-            with tempfile.TemporaryDirectory() as outside_dir_str:
-                outside_file = Path(outside_dir_str) / "outside.wav"
-                outside_file.write_bytes(make_wav_bytes())
-                with self.assertRaisesRegex(BackendInputError, "AUDIO_PATH_OUTSIDE_RUNTIME_TEMP"):
-                    read_pcm_wav(str(outside_file), temp_root)
-
-            # Traversal string
-            traversal_path = str(temp_root / "../etc/passwd")
-            with self.assertRaisesRegex(BackendInputError, "AUDIO_PATH_OUTSIDE_RUNTIME_TEMP"):
-                read_pcm_wav(traversal_path, temp_root)
-
-    def test_native_whisper_real_inference(self):
-        """Verify WhisperModel runs real inference on decoded PCM WAV samples without PyAV."""
-        model_path = Path("dist/artifacts-staging/whisper-base-en").resolve()
-        if not (model_path / "model.bin").is_file():
-            self.skipTest("whisper-base-en model not staged")
-
-        import sys
-        from faster_whisper import WhisperModel
-
-        model = WhisperModel(str(model_path), device="cpu", compute_type="int8")
-        with tempfile.TemporaryDirectory() as temp_root_str:
-            temp_root = Path(temp_root_str).resolve()
-            wav_file = temp_root / "inference_test.wav"
-            wav_file.write_bytes(make_wav_bytes(sample_rate=16000, channels=1, bits_per_sample=16, num_samples=16000))
-
-            samples = read_pcm_wav(str(wav_file), temp_root)
-            segments, info = model.transcribe(samples, language="en")
-            results = list(segments)
-            self.assertIsNotNone(info)
-            self.assertEqual(info.language, "en")
-            self.assertNotIn("av", sys.modules, "PyAV must not be loaded in sys.modules")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_stereo_downmix_is_float32_without_integer_overflow(self):
+        self.path.write_bytes(wav(
+            (-32768, -32768, 32767, 32767, -32768, 32767, 16384, 0), channels=2))
+        expected = [-1, 32767 / 32768, -1 / 65536, 0.25]
+        self.assert_audio(decode_wav(self.path), expected)
+        result = self.backend.transcribe(str(self.path), "zh-TW")
+        self.assertEqual(result, {
+            "text": "decoded", "language": "zh", "model": "base", "engine": "faster-whisper"})
+        self.assert_audio(self.calls[0][0], expected)
+        self.assertEqual(self.calls[0][1], {
+            "language": "zh", "condition_on_previous_text": False, "vad_filter": True})
+        self.assertEqual(self.loads, [("base", {"device": "cuda", "compute_type": "float16"})])

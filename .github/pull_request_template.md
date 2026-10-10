@@ -2,7 +2,7 @@
 
 Describe the problem and the change.
 
-- **Affected platforms:** Web / Desktop / Windows / macOS / iOS / Android
+- **Affected platforms:** Web / Desktop / Windows / macOS / iOS
 - **Related issue:**
 - **Security or privacy boundary changed:** yes / no
 - **Public contract or persisted data changed:** yes / no

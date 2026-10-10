@@ -216,27 +216,10 @@ public final class LocalModelClient {
             throw LocalModelError.credentialsInURL
         }
 
-        let isLan = isLocalOrLanHost(host)
-
-        if scheme == "http" {
-            guard isLan else {
-                throw LocalModelError.publicHttpNotAllowed(host)
-            }
-        } else if scheme == "https" {
-            guard isLan || allowedHttpsHosts.contains(host) else {
-                throw LocalModelError.endpointHostDisallowed(host)
-            }
-        }
-
-        // Endpoint binding check: cloud credentials cannot be sent to LAN or other cloud endpoints
-        if let provider = providerId?.lowercased() {
-            if let expectedHost = cloudProviderHosts[provider] {
-                if host != expectedHost {
-                    throw LocalModelError.cloudCredentialEndpointMismatch(provider: provider, host: host)
-                }
-            } else if !isLan && !allowedHttpsHosts.contains(host) {
-                throw LocalModelError.endpointHostDisallowed(host)
-            }
+        // Any user-entered https endpoint is allowed (no host allowlist, keys are not bound to a host).
+        // Plain http is limited to local/LAN hosts because iOS ATS blocks public cleartext anyway.
+        if scheme == "http" && !isLocalOrLanHost(host) {
+            throw LocalModelError.publicHttpNotAllowed(host)
         }
 
         return url

@@ -88,12 +88,11 @@ final class LocalModelClientTests: XCTestCase {
         }
     }
 
-    func testCloudCredentialCannotBeSentToLanEndpoint() {
-        XCTAssertThrowsError(try LocalModelClient.validateEndpoint(urlString: "http://127.0.0.1:8000/v1", providerId: "openai")) { error in
-            guard let err = error as? LocalModelError, case .cloudCredentialEndpointMismatch = err else {
-                XCTFail("Expected cloudCredentialEndpointMismatch, got \(error)")
-                return
-            }
+    func testUserChosenEndpointsAreNotBoundToProviderHost() {
+        // User-configured endpoints: any https host (and LAN http on any port) is accepted, with or without a provider id.
+        for (url, provider) in [("https://my-gateway.example.net/v1", nil), ("https://openrouter.ai/api/v1", "openai"),
+                                ("http://192.168.1.50:8080/v1", "openai"), ("http://127.0.0.1:8080/v1", nil)] as [(String, String?)] {
+            XCTAssertNoThrow(try LocalModelClient.validateEndpoint(urlString: url, providerId: provider), url)
         }
     }
 
@@ -119,14 +118,8 @@ final class LocalModelClientTests: XCTestCase {
         XCTAssertEqual(defaultHttps1, defaultHttps2, "Default port 443 must normalize to same key")
     }
 
-    func testOpenAiCloudProviderRejectsUntrustedHosts() {
-        XCTAssertThrowsError(try CredentialBinding.canonicalKey(providerId: "openai", baseUrl: "http://192.168.1.50:8000/v1")) { error in
-            guard let err = error as? LocalModelError, case .cloudCredentialEndpointMismatch = err else {
-                XCTFail("Expected cloudCredentialEndpointMismatch, got \(error)")
-                return
-            }
-        }
-
+    func testProviderKeyIsNotBoundToItsDefaultHost() {
+        XCTAssertNoThrow(try CredentialBinding.canonicalKey(providerId: "openai", baseUrl: "http://192.168.1.50:8000/v1"))
         XCTAssertNoThrow(try CredentialBinding.canonicalKey(providerId: "openai", baseUrl: "https://api.openai.com/v1"))
     }
 

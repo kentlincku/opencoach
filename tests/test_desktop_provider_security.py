@@ -23,27 +23,6 @@ class DesktopProviderSecurityTests(unittest.TestCase):
         self.assertIn("credential:clear", MAIN)
         self.assertIn("provider:operation", MAIN)
 
-    def test_subscription_oauth_is_owned_by_main_and_exposes_only_typed_operations(self):
-        for name in (
-            "subscriptionCapabilities", "subscriptionBeginLogin", "subscriptionPollLogin", "subscriptionCancelLogin",
-            "subscriptionStatus", "subscriptionLogout", "subscriptionOperation",
-        ):
-            self.assertIn(name, PRELOAD)
-        self.assertNotIn("subscriptionToken", PRELOAD)
-        self.assertNotIn("subscription:get-token", MAIN)
-        self.assertIn("new SubscriptionAuthBroker", MAIN)
-        for channel in (
-            "subscription:capabilities", "subscription:begin-login", "subscription:poll-login", "subscription:cancel-login",
-            "subscription:status", "subscription:logout", "subscription:operation",
-        ):
-            self.assertIn(channel, MAIN)
-        self.assertIn("VOICE_OPENAI_CODEX_CLIENT_ID", MAIN)
-        self.assertIn("VOICE_XAI_OAUTH_CLIENT_ID", MAIN)
-        self.assertIn("VOICE_XAI_OAUTH_SCOPE", MAIN)
-        self.assertIn("namespace: 'subscription'", MAIN)
-        self.assertIn("credentialStore = new CredentialStore({ userData, safeStorage });", MAIN)
-        self.assertIn("credentialStore: subscriptionTokenStore", MAIN)
-
     def test_electron_web_path_migrates_then_deletes_legacy_keys(self):
         self.assertIn("migrateDesktopProviderCredentials", HTML)
         migration = HTML.split("async function migrateDesktopProviderCredentials", 1)[1].split("\n}", 1)[0]
@@ -61,7 +40,8 @@ class DesktopProviderSecurityTests(unittest.TestCase):
     def test_electron_never_persists_new_provider_keys_to_local_storage(self):
         setter = HTML.split("function setProviderApiKey", 1)[1].split("function getProviderBaseUrl", 1)[0]
         self.assertIn("providerCredentialSet", setter)
-        self.assertIn("if (window.electronAPI)", setter)
+        self.assertIn("if (hasPrivilegedLlmBridge())", setter)
+        self.assertIn('typeof window.electronAPI?.providerCredentialSet !== "function"', setter)
         self.assertIn("providerCredentialClear", PRELOAD)
         self.assertNotRegex(HTML, r"console\.(?:log|warn|error)\([^\n]*(?:apiKey|credential)")
 

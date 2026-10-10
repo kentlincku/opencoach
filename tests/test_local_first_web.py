@@ -65,33 +65,40 @@ class LocalFirstWebContractTests(unittest.TestCase):
 
     def test_lesson_practice_stays_in_lesson_mode_and_persists_completion(self):
         start = HTML.split("async function startSpecificLesson", 1)[1].split("// Tabs", 1)[0]
-        tabs = HTML.split("function switchTab", 1)[1].split("// Coach Modal", 1)[0]
+        render = HTML.split("function renderPracticeTab", 1)[1].split("function completeCurrentLesson", 1)[0]
         complete = HTML.split("function completeCurrentLesson", 1)[1].split("function returnToLessonList", 1)[0]
-        self.assertIn('switchTab("lesson-practice")', start)
+        # Internal presentation must not issue another public navigation/Stop.
+        self.assertIn('renderPracticeTab("lesson-practice", current)', start)
+        self.assertIn('currentMode = "lesson"', start)
         self.assertIn('lesson.objectives.join("; ")', start)
         self.assertNotIn('switchTab("free")', start)
-        self.assertIn('tab === "lesson-practice"', tabs)
+        self.assertNotIn('switchTab(', start)
+        self.assertIn('tab === "lesson-practice"', render)
+        self.assertNotIn('stopConversation(', render)
+        self.assertNotIn('switchTab(', render)
         self.assertIn('id="lessonPracticeBanner"', HTML)
         self.assertIn('id="currentLessonTitle"', HTML)
         self.assertIn('localStorage.setItem("vp_completed_lessons"', complete)
 
     def test_mobile_layout_uses_scoped_rows_without_horizontal_overflow(self):
-        mobile = HTML.split("@media (max-width: 480px)", 1)[1].split("/* Glass Cards */", 1)[0]
+        # Single-column redesign: one phone breakpoint (560px) scopes rows and 44px targets.
+        mobile = HTML.split("@media (max-width: 560px)", 1)[1].split("@media (prefers-reduced-motion", 1)[0]
         self.assertIn("flex-direction: column", mobile)
-        self.assertIn(".header-actions", mobile)
+        self.assertIn(".app-topbar", mobile)
         self.assertIn("grid-template-columns", mobile)
-        self.assertIn(".settings-inline-row", mobile)
         self.assertIn(".settings-action-row", mobile)
-        self.assertIn(".text-input-row", mobile)
+        self.assertIn(".settings-drawer .modal-card", mobile)
+        self.assertIn(".composer", mobile)
         self.assertIn('class="settings-inline-row"', HTML)
         self.assertIn('class="settings-action-row"', HTML)
-        self.assertIn('class="text-input-row"', HTML)
+        self.assertIn('class="composer-inner text-input-row"', HTML)
         self.assertIn('content="width=device-width, initial-scale=1.0, viewport-fit=cover"', HTML)
-        self.assertIn("min-height: 100dvh", mobile)
+        self.assertIn("min-height: 100dvh", HTML)
         self.assertIn(".close-btn", mobile)
-        self.assertIn("height: clamp(220px, 34dvh, 300px)", mobile)
-        self.assertIn("#micNotice", mobile)
-        self.assertIn('placeholder="💬 輸入英文…"', HTML)
+        self.assertIn("min-height: 44px", mobile)
+        self.assertIn(".chat-box", mobile)
+        self.assertIn("min-width: 0", HTML)
+        self.assertIn('placeholder="輸入英文…"', HTML)
         self.assertNotIn("\n            .icon-btn {", mobile)
 
     def test_english_only_whisper_uses_compatible_generation_options(self):
@@ -99,16 +106,14 @@ class LocalFirstWebContractTests(unittest.TestCase):
         self.assertNotIn("language: 'en'", transcribe)
         self.assertNotIn("task: 'transcribe'", transcribe)
 
-    def test_google_gemini_uses_api_key_preset_without_oauth_product(self):
+    def test_cloud_models_use_api_key_presets_without_google_oauth(self):
         self.assertIn('src="./runtime/direct-api-presets.js"', HTML)
         self.assertIn('value="gemini"', HTML)
-        self.assertIn('https://generativelanguage.googleapis.com/v1beta/openai', (ROOT / "apps/web/runtime/direct-api-presets.js").read_text(encoding="utf-8"))
-        self.assertNotIn('google-gemini-oauth', HTML)
-        self.assertNotIn('startGoogleGeminiLogin', HTML)
+        self.assertIn('https://generativelanguage.googleapis.com/v1beta/openai', HTML)
+        self.assertNotIn('value="google-gemini-oauth"', HTML)
+        self.assertNotIn('google-gemini-oauth.js', HTML)
+        self.assertNotIn('startGoogleGeminiLogin()', HTML)
         self.assertNotIn('google-gemini-oauth.js', SERVICE_WORKER)
-        self.assertNotIn('value="oauth-pkce"', HTML)
-        self.assertNotIn('clientSecret', HTML)
-        self.assertNotIn('refresh_token', HTML)
 
     def test_iphone_uses_system_voice_and_direct_api_presets(self):
         self.assertIn("isIosBrowserEnvironment()", HTML)

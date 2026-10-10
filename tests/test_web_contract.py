@@ -5,10 +5,10 @@ ROOT = Path(__file__).resolve().parents[1]
 HTML = ROOT.joinpath("apps/web/index.html").read_text(encoding="utf-8") if ROOT.joinpath("apps/web/index.html").exists() else ""
 PRELOAD = ROOT.joinpath("apps/desktop/preload.cjs").read_text(encoding="utf-8") if ROOT.joinpath("apps/desktop/preload.cjs").exists() else ""
 MAIN = ROOT.joinpath("apps/desktop/main.cjs").read_text(encoding="utf-8") if ROOT.joinpath("apps/desktop/main.cjs").exists() else ""
+LLM_CONTRACT = ROOT.joinpath("apps/web/runtime/llm-provider-contract.js").read_text(encoding="utf-8")
 RUNTIME_CONTRACT = ROOT.joinpath("apps/web/runtime/runtime-contract.js").read_text(encoding="utf-8") if ROOT.joinpath("apps/web/runtime/runtime-contract.js").exists() else ""
 CAPABILITY_SCHEMA = ROOT.joinpath("contracts/voice-runtime.schema.json").read_text(encoding="utf-8") if ROOT.joinpath("contracts/voice-runtime.schema.json").exists() else ""
 CREATE_RUNTIME = ROOT.joinpath("apps/web/runtime/create-runtime.js").read_text(encoding="utf-8") if ROOT.joinpath("apps/web/runtime/create-runtime.js").exists() else ""
-LLM_PROVIDER_CONTRACT = ROOT.joinpath("apps/web/runtime/llm-provider-contract.js").read_text(encoding="utf-8")
 
 
 class WebContractTest(unittest.TestCase):
@@ -46,13 +46,12 @@ class WebContractTest(unittest.TestCase):
 
     def test_direct_api_uses_one_provider_agnostic_openai_compatible_connection(self):
         provider_select = HTML.split('id="providerSelect"', 1)[1].split("</select>", 1)[0]
-        self.assertIn("選擇連線方式 (Connection)", HTML)
+        self.assertIn('<label for="providerSelect">連線方式</label>', HTML)
         self.assertIn('<option value="openai-compatible">', HTML)
         self.assertIn('src="./runtime/llm-provider-contract.js"', HTML)
-        self.assertIn("OPENAI_COMPATIBLE: 'openai-compatible'", LLM_PROVIDER_CONTRACT)
-        self.assertIn("name: 'OpenAI-compatible API'", LLM_PROVIDER_CONTRACT)
-        self.assertIn("protocol: 'openai'", LLM_PROVIDER_CONTRACT)
-        self.assertIn("authMode: 'optional'", LLM_PROVIDER_CONTRACT)
+        self.assertIn("name: 'OpenAI-compatible API'", LLM_CONTRACT)
+        self.assertIn("protocol: 'openai'", LLM_CONTRACT)
+        self.assertIn("authMode: 'optional'", LLM_CONTRACT)
         self.assertNotIn('<option value="openai">', provider_select)
         self.assertNotIn('<option value="claude">', provider_select)
         self.assertNotIn('<option value="gemini">', provider_select)
@@ -78,12 +77,22 @@ class WebContractTest(unittest.TestCase):
         self.assertIn("shouldUseModelTts", HTML)
         self.assertIn("shouldLoadBrowserKokoro", HTML)
         self.assertIn("cancelPendingKokoroInitialization", HTML)
-        self.assertIn("shouldRetryKokoroInitialization", HTML)
+        self.assertNotIn("shouldRetryKokoroInitialization", HTML)
         self.assertIn("classifySuccessfulKokoroWarmup", HTML)
         self.assertNotIn("browserKokoroUsable = warmupMs <= 12000", HTML)
-        self.assertIn("scheduleBrowserKokoroInitialization();", HTML)
+        self.assertIn("scheduleBrowserKokoroInitialization(3000);", HTML)
+        self.assertIn("scheduleBrowserKokoroInitialization(0, caller);", HTML)
         self.assertIn("kokoroInitTimer", HTML)
-        self.assertGreaterEqual(HTML.count("isKokoroInitializationCurrent(generation)"), 3)
+        # Generation and caller checks belong to the shared guard, not a count of
+        # duplicated old retry expressions. Due work must still respect one load.
+        caller = HTML.split("function kokoroCallerIsCurrent", 1)[1].split("function pumpPendingKokoroInit", 1)[0]
+        pump = HTML.split("function pumpPendingKokoroInit", 1)[1].split("function logKokoroStep", 1)[0]
+        self.assertIn("checkBrowserVoiceOwner(caller.owner)", caller)
+        self.assertIn("isKokoroInitializationCurrent(caller.generation)", caller)
+        self.assertIn("kokoroCallerIsCurrent(pending)", pump)
+        self.assertIn('pending.state === "WAITING_TIMER"', pump)
+        self.assertIn("if (activeKokoroLoad) return null;", pump)
+        self.assertIn("activeKokoroLoad === load && kokoroCallerIsCurrent(load)", HTML)
         self.assertIn("playFallbackWebSpeech(cleanText, token, triggerStart, fallbackLabel)", HTML)
         self.assertIn('"系統語音（Auto）"', HTML)
         self.assertNotIn('id="enableBrowserKokoro"', HTML)
@@ -118,10 +127,9 @@ class WebContractTest(unittest.TestCase):
         self.assertIn("MAX_AUDIO_BYTES", MAIN)
         self.assertIn("AUDIO_PAYLOAD_TOO_LARGE", MAIN)
 
-    def test_retired_hermes_bridge_is_absent(self):
-        self.assertFalse(ROOT.joinpath("apps/desktop/hermes-bridge.cjs").exists())
-        self.assertNotIn("ai:subscription", MAIN)
-        self.assertNotIn("bridgeSubscription", PRELOAD)
+    def test_auth_output_is_not_returned_to_renderer(self):
+        for token in ["startNativeOAuth", "bridgeSubscription", "ai:subscription-"]:
+            self.assertFalse(token in PRELOAD, f"retired token {token}: preload.cjs")
 
     def test_desktop_does_not_eagerly_load_browser_transformers(self):
         self.assertNotIn('@xenova/transformers@2.17.2/dist/transformers.min.js', HTML)
@@ -143,16 +151,16 @@ class WebContractTest(unittest.TestCase):
 
     def test_ipc_validates_sender(self):
         self.assertIn("assertTrustedSender", MAIN)
-        self.assertIn("isTrustedMainFrame(event, mainWindow.webContents)", MAIN)
+        self.assertIn("event.sender !== mainWindow.webContents", MAIN)
 
     def test_sidecar_receives_minimal_environment(self):
         self.assertIn("function runtimeEnvironment", MAIN)
         self.assertNotIn("env: { ...process.env, VOICE_RUNTIME_TEMP_DIR", MAIN)
 
-    def test_subscription_chat_uses_typed_provider_broker(self):
-        self.assertIn("subscription:operation", MAIN)
-        self.assertIn("subscriptionOperation", PRELOAD)
-        self.assertNotIn("HERMES_PROXY_URL", MAIN)
+    def test_subscription_proxy_is_retired(self):
+        self.assertFalse(any(p.name.endswith("-bridge.cjs") for p in ROOT.joinpath("apps/desktop").iterdir()))
+        for token in ["_PROXY_URL", "ai:subscription-"]:
+            self.assertFalse(token in MAIN, f"retired token {token}: main.cjs")
 
 
 if __name__ == "__main__":

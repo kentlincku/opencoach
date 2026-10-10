@@ -3,7 +3,7 @@ import Foundation
 import WebKit
 #endif
 
-public struct BridgeResponse: Codable, Equatable {
+public struct BridgeResponse: Equatable {
     public let id: String
     public let success: Bool
     public let models: [String]?
@@ -15,6 +15,15 @@ public struct BridgeResponse: Codable, Equatable {
     public let availability: String?
     public let contextVersion: Int?
     public let error: String?
+    public var subscription: [String: Any]? = nil
+
+    public static func == (lhs: BridgeResponse, rhs: BridgeResponse) -> Bool {
+        lhs.id == rhs.id && lhs.success == rhs.success && lhs.models == rhs.models && lhs.text == rhs.text
+            && lhs.hasCredential == rhs.hasCredential && lhs.stored == rhs.stored && lhs.cleared == rhs.cleared
+            && lhs.available == rhs.available && lhs.availability == rhs.availability
+            && lhs.contextVersion == rhs.contextVersion && lhs.error == rhs.error
+            && NSDictionary(dictionary: lhs.subscription ?? [:]).isEqual(to: rhs.subscription ?? [:])
+    }
 
     public init(
         id: String,
@@ -27,8 +36,10 @@ public struct BridgeResponse: Codable, Equatable {
         available: Bool? = nil,
         availability: String? = nil,
         contextVersion: Int? = nil,
-        error: String? = nil
+        error: String? = nil,
+        subscription: [String: Any]? = nil
     ) {
+        self.subscription = subscription
         self.id = id
         self.success = success
         self.models = models
@@ -56,17 +67,22 @@ public final class VoiceWebBridge: VoiceBridgeContract {
     private let client: LocalModelClient
     private let credentials: CredentialStoreProtocol
     private let appleFoundationModel: any AppleFoundationModelServicing
+    private let subscriptionAuth: SubscriptionAuth
+    private let subscriptionClient: SubscriptionClient
+    private let openURL: (URL) async -> Void
 
     public static let appleFoundationModelProviderID = "apple-foundation-models"
 
     public static let allowedOperations: Set<String> = [
         "models", "chat", "credential.has", "credential.set", "credential.clear",
-        "apple.status", "apple.chat", "apple.cancel"
+        "apple.status", "apple.chat", "apple.cancel",
+        "subscription.begin", "subscription.poll", "subscription.complete", "subscription.cancel",
+        "subscription.status", "subscription.logout"
     ]
 
     public static let allowedKeys: Set<String> = [
         "id", "operation", "providerId", "baseUrl", "model", "messages", "maxTokens", "credential",
-        "locale", "targetRequestId"
+        "locale", "targetRequestId", "loginId", "code"
     ]
 
     public static let cloudProviders: Set<String> = [
@@ -76,9 +92,14 @@ public final class VoiceWebBridge: VoiceBridgeContract {
     public init(
         client: LocalModelClient? = nil,
         credentials: CredentialStoreProtocol = KeychainStore(),
-        appleFoundationModel: any AppleFoundationModelServicing = AppleFoundationModelService()
+        appleFoundationModel: any AppleFoundationModelServicing = AppleFoundationModelService(),
+        subscriptionHTTP: SubscriptionHTTP = URLSessionSubscriptionHTTP(),
+        openURL: @escaping (URL) async -> Void = { _ in }
     ) {
         self.credentials = credentials
+        self.subscriptionAuth = SubscriptionAuth(credentials: credentials, http: subscriptionHTTP)
+        self.subscriptionClient = SubscriptionClient(auth: subscriptionAuth, http: subscriptionHTTP)
+        self.openURL = openURL
         self.client = client ?? LocalModelClient(credentials: credentials)
         self.appleFoundationModel = appleFoundationModel
     }
@@ -126,6 +147,17 @@ public final class VoiceWebBridge: VoiceBridgeContract {
             return BridgeResponse(id: id, success: false, error: "INVALID_PROVIDER_ID")
         }
         let providerId = rawProviderId.lowercased()
+
+        if operation.hasPrefix("subscription.") {
+            return await handleSubscriptionMessage(id: id, operation: operation, providerId: providerId, dict: dict)
+        }
+        if SubscriptionProvider(rawValue: providerId) != nil {
+            // Subscription tokens are never reachable through credential.* ; models/chat route to the subscription client.
+            if operation.hasPrefix("credential.") {
+                return BridgeResponse(id: id, success: false, error: "PROVIDER_NOT_ALLOWED")
+            }
+            return await handleSubscriptionInference(id: id, operation: operation, providerId: providerId, dict: dict)
+        }
 
         if operation.hasPrefix("apple.") {
             return await handleAppleFoundationModelMessage(
@@ -222,6 +254,9 @@ public final class VoiceWebBridge: VoiceBridgeContract {
             }
         } catch let localErr as LocalModelError {
             return BridgeResponse(id: id, success: false, error: localErr.errorCode)
+        } catch let urlErr as URLError {
+            // Surface the network cause (e.g. local-network permission denied, ATS, timeout) without details.
+            return BridgeResponse(id: id, success: false, error: "NETWORK_ERROR_\(abs(urlErr.code.rawValue))")
         } catch {
             return BridgeResponse(id: id, success: false, error: "BRIDGE_EXECUTION_ERROR")
         }
@@ -308,6 +343,101 @@ public final class VoiceWebBridge: VoiceBridgeContract {
             return BridgeResponse(id: id, success: false, error: error.errorCode)
         } catch {
             return BridgeResponse(id: id, success: false, error: "APPLE_MODEL_SESSION_ERROR")
+        }
+    }
+
+    private func handleSubscriptionMessage(id: String, operation: String, providerId: String, dict: [String: Any]) async -> BridgeResponse {
+        let keys: [String: Set<String>] = [
+            "subscription.begin": ["id", "operation", "providerId"],
+            "subscription.poll": ["id", "operation", "loginId"],
+            "subscription.complete": ["id", "operation", "loginId", "code"],
+            "subscription.cancel": ["id", "operation", "loginId"],
+            "subscription.status": ["id", "operation", "providerId"],
+            "subscription.logout": ["id", "operation", "providerId"],
+        ]
+        guard let allowed = keys[operation] else { return BridgeResponse(id: id, success: false, error: "UNSUPPORTED_OPERATION") }
+        for key in dict.keys where !allowed.contains(key) {
+            return BridgeResponse(id: id, success: false, error: "FORBIDDEN_PROPERTY_\(key)")
+        }
+        let loginId = dict["loginId"] as? String ?? ""
+        if allowed.contains("loginId") && (loginId.isEmpty || loginId.count > 64) {
+            return BridgeResponse(id: id, success: false, error: "INVALID_SUBSCRIPTION_REQUEST")
+        }
+        do {
+            switch operation {
+            case "subscription.begin":
+                let start = try await subscriptionAuth.beginLogin(providerId)
+                await openURL(start.verificationURL)
+                // The authorize URL (PKCE state) stays native; JS only gets display data.
+                var info: [String: Any] = ["loginId": start.loginId, "mode": start.mode,
+                                           "verificationHost": start.verificationURL.host ?? ""]
+                if let code = start.userCode { info["userCode"] = code }
+                if let interval = start.interval { info["interval"] = interval }
+                return BridgeResponse(id: id, success: true, subscription: info)
+            case "subscription.poll":
+                let done = try await subscriptionAuth.pollLogin(loginId)
+                return BridgeResponse(id: id, success: true, subscription: ["state": done ? "complete" : "pending"])
+            case "subscription.complete":
+                guard let code = dict["code"] as? String else { return BridgeResponse(id: id, success: false, error: "INVALID_AUTH_CODE") }
+                try await subscriptionAuth.completeLogin(loginId, code: code)
+                return BridgeResponse(id: id, success: true, subscription: ["state": "complete"])
+            case "subscription.cancel":
+                subscriptionAuth.cancelLogin(loginId)
+                return BridgeResponse(id: id, success: true, cleared: true)
+            case "subscription.status":
+                let status = try subscriptionAuth.status(providerId)
+                return BridgeResponse(id: id, success: true, subscription: ["providerId": providerId,
+                    "loggedIn": status.loggedIn, "canRefresh": status.canRefresh])
+            case "subscription.logout":
+                try subscriptionAuth.logout(providerId)
+                return BridgeResponse(id: id, success: true, cleared: true)
+            default:
+                return BridgeResponse(id: id, success: false, error: "UNSUPPORTED_OPERATION")
+            }
+        } catch let error as SubscriptionError {
+            return BridgeResponse(id: id, success: false, error: error.code)
+        } catch let urlErr as URLError {
+            return BridgeResponse(id: id, success: false, error: "NETWORK_ERROR_\(abs(urlErr.code.rawValue))")
+        } catch {
+            return BridgeResponse(id: id, success: false, error: "BRIDGE_EXECUTION_ERROR")
+        }
+    }
+
+    private func handleSubscriptionInference(id: String, operation: String, providerId: String, dict: [String: Any]) async -> BridgeResponse {
+        do {
+            switch operation {
+            case "models":
+                return BridgeResponse(id: id, success: true, models: try await subscriptionClient.models(providerId))
+            case "chat":
+                guard let model = dict["model"] as? String, !model.isEmpty, model.count <= 256 else {
+                    return BridgeResponse(id: id, success: false, error: "INVALID_MODEL")
+                }
+                guard let raw = dict["messages"] as? [[String: Any]], !raw.isEmpty, raw.count <= 100 else {
+                    return BridgeResponse(id: id, success: false, error: "MALFORMED_MESSAGES")
+                }
+                var messages: [ChatMessage] = []
+                for msg in raw {
+                    guard let role = msg["role"] as? String, ["system", "user", "assistant"].contains(role),
+                          let content = msg["content"] as? String, content.count <= 32000 else {
+                        return BridgeResponse(id: id, success: false, error: "MALFORMED_MESSAGES")
+                    }
+                    messages.append(ChatMessage(role: role, content: content))
+                }
+                let maxTokens = dict["maxTokens"] as? Int ?? 300
+                guard maxTokens >= 1 && maxTokens <= 4096 else {
+                    return BridgeResponse(id: id, success: false, error: "INVALID_MAX_TOKENS")
+                }
+                let text = try await subscriptionClient.chat(providerId, model: model, messages: messages, maxTokens: maxTokens)
+                return BridgeResponse(id: id, success: true, text: text)
+            default:
+                return BridgeResponse(id: id, success: false, error: "UNSUPPORTED_OPERATION")
+            }
+        } catch let error as SubscriptionError {
+            return BridgeResponse(id: id, success: false, error: error.code)
+        } catch let urlErr as URLError {
+            return BridgeResponse(id: id, success: false, error: "NETWORK_ERROR_\(abs(urlErr.code.rawValue))")
+        } catch {
+            return BridgeResponse(id: id, success: false, error: "BRIDGE_EXECUTION_ERROR")
         }
     }
 }

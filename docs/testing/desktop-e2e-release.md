@@ -119,7 +119,7 @@ Pass：
 - STT transcript 非空，暫存檔在成功與錯誤後都刪除。
 - 第二輪 sidecar PID 不變；另以 benchmark load counter 或去敏 instrumentation 證明 backend/model `loadCount=1`，不能只靠同 PID 推論模型已重用。
 - TTS 可解碼及播放。
-- Production UI、preload與Main Process只允許ChatGPT/Codex與Grok/SuperGrok兩個typed subscription路徑；無Voice Practice-owned registration時必須disabled。Hermes、CLI identity與generic consumer-subscription bridge均不得存在。
+- Production UI、preload與Main Process只允許ChatGPT/Codex與Grok/SuperGrok兩個typed subscription路徑；無Voice Practice-owned registration時必須disabled。外部 agent proxy、CLI identity與generic consumer-subscription bridge均不得存在。
 - Browser 模式的直接 API key 仍由 renderer 使用並存於 `vp_provider_keys` localStorage；只應在可信裝置使用。Electron Desktop 的直接 API key 必須透過 write-only IPC 存入作業系統 `safeStorage`，不得回填 renderer；遷移成功或失敗後都不得保留 renderer 明文。兩種模式的測試與風險不可混寫。
 - Native backend 缺少時仍可打字、system TTS 與切換已設定的 Cloud Provider。
 

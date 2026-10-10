@@ -1,168 +1,118 @@
 # OpenCoach
 
-OpenCoach is a local-first, cross-platform voice-practice application. It shares one web user interface across the browser, Electron desktop, iOS, and Android while keeping platform-specific speech and credential handling behind typed adapters.
+OpenCoach is a local-first English speaking coach. You talk, it listens with on-device speech recognition, an LLM of your choice replies as one of eight coaches, and the reply is read aloud. Speech stays on your device; the only network call during practice is to the LLM endpoint you configure, which can be a model on your own machine.
 
-The application was previously developed under the working name **Voice Practice Unified**. Some package names and application identifiers retain that name for compatibility.
+The same web interface runs in the browser, in the macOS/Windows desktop App, and inside the iOS App.
 
-## Screenshots
+> Some package names and App identifiers still use the earlier working name **Voice Practice**.
 
 ![OpenCoach conversation practice with the Heart coach, text input, voice controls, and shadowing feedback](docs/images/opencoach-conversation.png)
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/images/opencoach-lessons.png" alt="OpenCoach seven-lesson learning map with progress and unlock states"></td>
-    <td width="32%"><img src="docs/images/opencoach-model-settings.png" alt="OpenCoach responsive model settings with an empty API-key field and a local OpenAI-compatible endpoint"></td>
+    <td width="68%"><img src="docs/images/opencoach-lessons.png" alt="OpenCoach lesson map with progress and unlock states"></td>
+    <td width="32%"><img src="docs/images/opencoach-model-settings.png" alt="OpenCoach model settings with a local OpenAI-compatible endpoint"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Structured learning map</strong><br>Seven built-in lessons with local progress and unlock states.</td>
-    <td align="center"><strong>Responsive model settings</strong><br>Choose a local or cloud endpoint; credentials are optional for local services.</td>
+    <td align="center"><strong>Lessons</strong><br>Built-in lessons with local progress; editable and exportable.</td>
+    <td align="center"><strong>Model settings</strong><br>Local or cloud endpoint; no key needed for local services.</td>
   </tr>
 </table>
 
-> The screenshots show a fresh local installation. `LLM not configured` is the expected state until the user explicitly selects a local endpoint or configures a cloud provider.
+## Get the App
 
-## Project status
-
-OpenCoach is open-source beta software. The source tree is suitable for development and review, but there is currently **no signed public desktop or mobile release**.
-
-| Target | Source status | Public binary status |
+| Platform | Current version | How |
 |---|---|---|
-| Browser / PWA | Available | Build from source |
-| Electron desktop | Available | Unsigned engineering pre-releases (macOS arm64, Windows x64) |
-| Windows native voice | Source and reproducible build inputs available | No public runtime/model bundle |
-| macOS native voice | Source available; packaging dependencies require separate license review | Runtime embedded in the unsigned arm64 pre-release; no model weights |
-| iOS | Source available | Signing and real-device release gates not completed |
-| Android | Source available | Signing and real-device release gates not completed |
+| macOS (Apple Silicon, macOS 13+) | **v0.3.0-beta.1** | Download the DMG from [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-macos.md) |
+| iOS / iPadOS 17+ | source only | Build and install with Xcode → [install guide](docs/install-ios.md) |
+| Windows x64 | v0.2.0-beta.1 | Previous release on [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-windows.md); not yet updated to 0.3 |
+| Browser | — | Run from source (`npm run start:web`), see [Development](#development) |
 
-See [Release status](docs/RELEASE_STATUS.md) for the exact boundaries.
+All builds are beta. The macOS App is **not signed with an Apple Developer ID or notarized**: the first launch needs **System Settings → Privacy & Security → Open Anyway**. Verify the download against `SHA256SUMS.txt` first. There is no App Store or TestFlight release.
 
-## Features
+Android was removed in v0.3.0-beta.1.
 
-- Shared browser/Electron/mobile WebView user interface
-- Local-first course library, progress, settings, STT, and TTS
-- Browser speech adapters and local model support
-- Persistent native desktop voice sidecar
-- Windows faster-whisper and Kokoro ONNX engineering path
-- iOS and Android typed native bridges
-- OpenAI-compatible API-key or local endpoint route
-- Desktop-only typed subscription-auth boundaries for explicitly supported providers
-- Apple Foundation Models as an iOS-only platform-local provider
+## What it does
 
-OpenCoach does not silently upload audio when a local speech backend fails. Cloud LLM requests occur only when the user configures and selects a remote provider.
+- **Voice conversation.** Speak, pause, and your turn is sent automatically. The coach replies in text and voice; the microphone reopens only after the reply finishes playing.
+- **Eight editable coaches.** Change each coach's name, description, speaking style (sent to the LLM), voice, rate and pitch, or restore the default. On iOS each coach starts with a different system voice that fits its description.
+- **Choose your speech-recognition model** (desktop). Four Whisper tiers from tiny (fastest) to large-v3-turbo (most accurate), with a recommendation based on your device's memory and CPU.
+- **Models download inside the App** (macOS). Nothing large is bundled: pick a model in Settings, see its size and license, and it downloads from a pinned upstream revision, is checked by SHA-256, and then works offline.
+- **Shadowing.** Repeat the coach's last sentence and get a word-match score.
+- **Lessons.** Guided practice from an editable lesson library with local progress, import and export.
+- **Any OpenAI-compatible LLM.** A local server such as oMLX, Ollama or LM Studio, or a cloud API with your own key. iOS can also use Apple Intelligence on supported devices. The desktop and iOS Apps can optionally sign in with a ChatGPT, Claude or Grok subscription (personal use; see the warning in Settings).
 
-## Security model
+### Speech engines
 
-- Electron uses `contextIsolation`, sandboxing, a narrow preload API, and sender checks.
-- Provider credentials are not exposed to the renderer by desktop credential stores.
-- Mobile credentials remain in platform-protected storage.
-- Native voice uses bounded typed messages, request IDs, cancellation, and process cleanup.
-- Runtime/model manifests fail closed until trusted artifacts are explicitly configured.
-- Browser API keys are bound to their normalized endpoint and cleared when the endpoint changes.
+| | Speech-to-text | Text-to-speech |
+|---|---|---|
+| macOS App | MLX Whisper (4 tiers, downloaded in the App) | Kokoro (downloaded in the App), or system voices |
+| Windows App (0.2) | faster-whisper on CPU/CUDA | Kokoro ONNX, or system voices |
+| iOS App | Apple Speech, forced on-device | System voices |
+| Browser | Whisper in the browser | Kokoro in the browser, or system voices |
 
-Please report vulnerabilities through [GitHub private vulnerability reporting](SECURITY.md), not a public issue.
+If a local speech engine is unavailable, OpenCoach falls back to another local option or to typing. It never silently sends your audio to a cloud service.
 
-## Quick start
+### Browser / Local Web Mode
 
-### Requirements
+`npm run start:web` serves the interface on <http://127.0.0.1:8765>. The server listens on loopback only; it does not proxy LLM requests or read API keys. Point Settings at a local OpenAI-compatible service such as `http://127.0.0.1:8000/v1`. A Hosted HTTPS deployment can reach a local endpoint only where the browser's Local Network Access and mixed-content rules allow it; requests always go straight from the browser.
 
-- Node.js 22
-- npm
-- Python 3.11+ for source tests and local web serving
-- `uv` for native Python runtime setup
+## Privacy and security
 
-### Install and test
+- Recordings, transcripts, settings, lessons and progress stay on the device.
+- API keys and subscription tokens live in the OS keystore (desktop) or Keychain (iOS); the web interface cannot read them back.
+- The desktop App runs with Electron `contextIsolation`, sandboxing and a narrow preload API; the speech runtime is a separate process with a minimal environment.
+- Downloaded models are verified file by file before use; the bundled speech runtime is verified against a compiled trust root before it starts.
+
+Report vulnerabilities through [GitHub private vulnerability reporting](SECURITY.md), not a public issue.
+
+## Development
+
+Requirements: Node.js 26, npm, Python 3.11+. Building the macOS speech runtime also needs `uv` and the Xcode command-line tools.
 
 ```bash
 git clone https://github.com/kentlincku/opencoach.git
 cd opencoach
 npm ci
-npm test
+python3 -m pip install -r requirements-test.txt
+npm test               # web build + Node and Python tests for this platform
+npm run start:web      # browser version on http://127.0.0.1:8765
+npm start              # desktop App in development mode
 ```
-
-The test command builds generated web assets, runs Python and Node tests, and checks JavaScript syntax.
-
-### Browser / Local Web Mode
-
-```bash
-npm run start:web
-```
-
-Open <http://127.0.0.1:8765>. The server listens on loopback and does not proxy LLM requests or read API keys. A local OpenAI-compatible service can be configured explicitly, for example `http://127.0.0.1:8000/v1`.
-
-A Hosted HTTPS deployment may access a local endpoint only where the browser's Local Network Access and mixed-content policies permit it; requests still go directly from the browser and are not proxied by OpenCoach.
-
-### Electron development mode
-
-```bash
-npm start
-```
-
-### Downloads
-
-Unsigned engineering pre-releases (macOS arm64 DMG/ZIP, Windows x64 Setup/Portable EXE, `SHA256SUMS.txt`) are published on the [Releases page](https://github.com/kentlincku/opencoach/releases). They contain no speech model weights; the app falls back to system/browser speech. Verify checksums before opening.
-
-### npm scripts
 
 | Command | Purpose |
 |---|---|
-| `npm test` | Build web assets, run Python and Node tests, syntax checks |
-| `npm run start:web` | Local web mode on `http://127.0.0.1:8765` |
-| `npm start` | Electron desktop (development) |
-| `npm run build:web` | Build generated web assets only |
-| `npm run build:icons` | Generate app icons (required before packaging) |
-| `npm run pack:mac` | macOS arm64 DMG + ZIP into `dist/` |
-| `npm run pack:win` | Windows x64 Setup + Portable EXE into `dist/` |
-| `npm run dist:dir` | Unpacked app directory only (no installer) |
-| `npm run verify:mac:voice` | Verify the embedded voice runtime in the packaged macOS app |
-| `npm run verify:mac:voice:app` | End-to-end voice check against the packaged macOS app |
+| `npm test` | Platform test gate (macOS/Linux: `scripts/run-mac-tests.mjs`; Windows: `scripts/run-win-tests.mjs`) |
+| `npm run build:web` | Build the generated web assets |
+| `npm run build:icons` | Generate App icons (needed before packaging) |
+| `bash scripts/ci-pack-macos.sh <abs-dir>` | Build the macOS App exactly like the release: speech runtime from pinned public sources, pack, ad-hoc seal, DMG + ZIP (20–30 min) |
 
-Release builds are produced by `.github/workflows/release.yml` when a `v*` tag is pushed.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the macOS App and publishes it with checksums as a pre-release. Pull requests run the tests on Linux, macOS and Windows, a full macOS App build, and the iOS simulator tests.
 
-Native speech backends require the platform-specific runtime setup described in:
-
-- [Windows installation and engineering build](docs/install-windows.md)
-- [macOS installation and engineering build](docs/install-macos.md)
-- [iOS source setup](docs/install-ios.md)
-- [Android source setup](docs/install-android.md)
-
-## Native runtime and model policy
-
-This Git repository intentionally excludes:
-
-- installers and portable executables
-- DMG, ZIP, app bundles, and packaged runtimes
-- Whisper/Kokoro model weights and voice data
-- generated Python wheels
-- credentials, recordings, caches, and raw device logs
-
-Windows faster-whisper is prepared from a pinned upstream Git commit plus the reviewable patch in [`patches/`](patches/). Generated runtime artifacts remain local and are validated separately.
-
-Model weights and release assets keep their upstream licenses; the repository's Apache-2.0 license does not relicense them. See [Third-party notices](THIRD_PARTY_NOTICES.md).
-
-## Repository layout
+### Repository layout
 
 ```text
-apps/web/        shared web/PWA user interface
-apps/desktop/    Electron main, preload, security, and lifecycle
-apps/ios/        iOS app shell and native adapters
-apps/android/    Android app shell and native adapters
-native/python/   desktop native voice sidecar
-contracts/       cross-runtime JSON contracts
-schemas/         artifact manifest schemas
-scripts/         build and verification tools
-tests/           source-level product and security tests
-docs/            architecture, setup, and release boundaries
-legal/           detailed third-party license material
+apps/web/        shared web interface (also bundled into desktop and iOS)
+apps/desktop/    Electron main process, preload, model downloads, runtime management
+apps/ios/        iOS App (SwiftUI + WKWebView) and native speech/LLM services
+native/python/   desktop speech runtime (Whisper, Kokoro)
+resources/       pinned model catalogs and runtime manifests
+spikes/          pinned build inputs for the macOS speech runtime
+scripts/         build, packaging and test runners
+tests/           Node and Python tests
+docs/            install guides, architecture, feature specs (docs/contracts/)
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for runtime and trust-boundary details.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the runtime and trust boundaries, and [docs/RELEASE_STATUS.md](docs/RELEASE_STATUS.md) for what each release covers.
+
+### What is not in Git
+
+Installers, App bundles, packaged runtimes, model weights, voice data, generated wheels, credentials, recordings and logs are never committed. Models keep their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md). Changes to credential handling, Electron IPC, native bridges, artifact verification, or release workflows require tests that exercise the relevant trust boundary.
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Changes to credential handling, Electron IPC, native bridges, model or runtime verification, or release workflows need tests that exercise that boundary.
 
 ## License
 
-OpenCoach's original source code is licensed under the [Apache License 2.0](LICENSE), except where a file or directory carries a different notice.
-
-Derived and third-party components remain under their original licenses. In particular, the in-tree Kokoro ONNX adapter contains MIT-licensed upstream-derived portions. See [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+OpenCoach's original source code is licensed under the [Apache License 2.0](LICENSE), except where a file or directory carries a different notice. Third-party components keep their own licenses; the in-tree Kokoro ONNX adapter contains MIT-licensed upstream-derived portions. See [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -51,23 +51,21 @@ class PublicRepositoryContractTests(unittest.TestCase):
         readme = self.read("README.md")
         release = self.read("docs/RELEASE_STATUS.md")
         for value in (
-            "no signed public desktop or mobile release",
-            "no model weights",
-            "No public runtime/model bundle",
+            "not signed with an Apple Developer ID or notarized",
+            "Open Anyway",
+            "SHA256SUMS.txt",
+            "no App Store or TestFlight release",
+            "Nothing large is bundled",
         ):
             self.assertIn(value, readme)
         self.assertIn("unsigned engineering pre-release", release)
         self.assertIn("no signed, notarized, production-supported binary release", release)
         self.assertIn("not stored in git", release.lower())
 
-    def test_faster_whisper_is_source_prepared_not_committed_as_wheel(self):
+    def test_faster_whisper_is_not_committed_as_vendored_package(self):
         requirements = self.read("spikes/packaged-runtime/requirements-windows-x64.in")
-        prepare = self.read("scripts/build-faster-whisper-wavonly.py")
-        self.assertIn("faster-whisper==1.2.1", requirements)
         self.assertNotIn("packages/faster_whisper", requirements)
-        self.assertIn("65882eee9f5cdbeeb2d877f1131d48cf241b327d", prepare)
-        self.assertIn("git", prepare)
-        self.assertIn("apply", prepare)
+        self.assertFalse(any((ROOT / "spikes/packaged-runtime").glob("*.whl")))
 
     def test_markdown_local_links_resolve(self):
         link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -104,7 +102,6 @@ class PublicRepositoryContractTests(unittest.TestCase):
             "/apps/web/",
             "/apps/desktop/",
             "/apps/ios/",
-            "/apps/android/",
             "/native/python/",
             "/.github/workflows/",
         ):
