@@ -1,0 +1,22 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path');
+const {page,row,node}=require('./r22-functional-page.cjs');
+module.exports=async function restorePage(t){
+ const h=await page(t),dir=fs.mkdtempSync(path.join(process.env.TMPDIR,'restore-'));
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const blobs=new Map();let seq=0,downloads=0,imports=0;
+ h.p.context.Blob=Blob;h.p.context.File=File;h.p.context.Event=class {constructor(type){this.type=type;}};
+ h.p.context.DataTransfer=class {constructor(){this.files=[];this.items={add:f=>this.files.push(f)};}};
+ h.p.context.URL={createObjectURL:b=>{const u='blob:'+seq++;blobs.set(u,b);return u;},revokeObjectURL:u=>blobs.delete(u)};
+ Object.defineProperty(h.p.context,'confirm',{get:()=>h.p.context.window.confirm});h.p.context.window.confirm=()=>false;
+ h.document.body=node();h.document.createElement=tag=>{const n=node();if(tag==='a'){n.remove=()=>{};n.click=()=>{const b=blobs.get(n.href);const work=b.text().then(text=>{fs.writeFileSync(path.join(dir,n.download),text);downloads++;});h.tasks.push(work);};}return n;};
+ const qs=h.document.querySelector.bind(h.document);
+ h.document.querySelector=s=>{const m=s.match(/^button\[onclick="(exportLessonLibrary|restoreDefaultLessons)\(\)"\]$/);if(m){const n=node();n.click=()=>h.p.run(m[1]+'()');return n;}return qs(s);};
+ h.get('lessonImportFile').dispatchEvent=()=>{imports++;const work=h.p.run('importLessonFile({target:document.getElementById("lessonImportFile")})');h.tasks.push(work);return work;};
+ h.client.send=async()=>({});
+ h.p.context.setTimeout=fn=>setImmediate(fn);
+ h.p.context.clearTimeout=clearImmediate;
+ h.import=async content=>{h.get('lessonImportMode').value='replace';h.get('lessonImportFile').files=[new File([content],'lessons.json')];await h.get('lessonImportFile').dispatchEvent();};
+ await h.import(JSON.stringify({schemaVersion:1,lessons:[{id:'custom_test_lesson',title:'Custom lesson',level:'A1',objectives:['Practice English'],opening_line:'Practice English daily.'}]}));
+ return Object.assign(h,{dir,counts:()=>({downloads,imports}),run:()=>row(h,'RESTORE',{fs,path,options:{downloadsDir:dir},receiptsDir:dir})});
+};

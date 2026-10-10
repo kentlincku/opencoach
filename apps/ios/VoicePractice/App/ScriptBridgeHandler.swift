@@ -13,6 +13,7 @@ public class ScriptBridgeHandler: NSObject, WKScriptMessageHandler {
     // SwiftPM does not include the UIKit application speech service.
     #if os(iOS) && !SWIFT_PACKAGE
     private var nativeSpeech: NativeSpeechService?
+    private var nativeRecognizer: NativeSpeechRecognizer?
 
     public func stopNativeSpeech() {
         Task { @MainActor in self.nativeSpeech?.stop() }
@@ -123,12 +124,21 @@ public class ScriptBridgeHandler: NSObject, WKScriptMessageHandler {
             if let operation = dict["operation"] as? String, operation.hasPrefix("speech.") {
                 guard let id = dict["id"] as? String, !id.isEmpty, id.count <= 200 else { return }
                 if nativeSpeech == nil { nativeSpeech = NativeSpeechService() }
+                if operation == "speech.transcribe" || operation == "speech.transcribeCancel" { nativeRecognizer?.cancel(); if nativeRecognizer == nil { nativeRecognizer = NativeSpeechRecognizer() } }
                 var data: [String: Any] = [:]
                 var failure: String?
                 do {
                     switch operation {
                     case "speech.voices": data = nativeSpeech!.list()
-                    case "speech.stop": nativeSpeech!.stop(); data = ["stopped": true]
+                    case "speech.stop": nativeSpeech!.stop(); nativeRecognizer?.cancel(); data = ["stopped": true]
+                    case "speech.openSettings":
+                        // Fixed destination: Apple's public deep link to this app's page in
+                        // Settings (no URL is accepted from the page). Apple offers no public
+                        // link to the Spoken Content voice list; the UI explains the path.
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { throw NSError(domain: "NativeSpeech", code: 1, userInfo: [NSLocalizedDescriptionKey: "SETTINGS_UNAVAILABLE"]) }
+                        data = ["opened": await UIApplication.shared.open(url)]
+                    case "speech.transcribe": data = try await nativeRecognizer!.transcribe(dict)
+                    case "speech.transcribeCancel": data = ["cancelled": true]
                     case "speech.speak":
                         data = try await nativeSpeech!.speak(dict) { [weak self] info in
                             guard let self, self.documentGeneration == initiatingGeneration,
@@ -177,6 +187,7 @@ public class ScriptBridgeHandler: NSObject, WKScriptMessageHandler {
             if let available = response.available { dataDict?["available"] = available }
             if let availability = response.availability { dataDict?["availability"] = availability }
             if let contextVersion = response.contextVersion { dataDict?["contextVersion"] = contextVersion }
+            if let subscription = response.subscription { dataDict?.merge(subscription) { $1 } }
             if dataDict?.isEmpty == true { dataDict = nil }
 
             // Named argument dispatch without raw interpolation or arguments.id
@@ -226,7 +237,14 @@ public class NavigationPolicyCoordinator: NSObject, WKNavigationDelegate {
         handler?.beginMainFrameNavigation(navigationToken: navigation)
     }
 
+    // The trusted document is committed (its scripts start running) before didFinish; open the bridge
+    // here so messages sent during page load (e.g. capability probes) are not silently dropped.
+    public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        handler?.commitMainFrameNavigation(navigationToken: navigation, url: webView.url)
+    }
+
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // No-op when didCommit already committed this navigation (token no longer current).
         handler?.commitMainFrameNavigation(navigationToken: navigation, url: webView.url)
         didFinishNavigation?(webView, navigation)
     }

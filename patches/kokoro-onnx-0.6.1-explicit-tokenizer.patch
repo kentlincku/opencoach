@@ -1,0 +1,383 @@
+--- a/kokoro_onnx/__init__.py
++++ b/kokoro_onnx/__init__.py
+@@ -12,99 +12,43 @@
+ from numpy.typing import NDArray
+ 
+ from .chunker import pause_after, split_phonemes
+-from .config import MAX_PHONEME_LENGTH, SAMPLE_RATE, EspeakConfig, KoKoroConfig
++from .config import MAX_PHONEME_LENGTH, SAMPLE_RATE, KoKoroConfig
+ from .log import log
+ from .pauses import insert as insert_pauses
+-from .session import create_session, embedded_vocab, input_dtypes
++from .session import input_dtypes
+ from .sliding import Timing, synthesize, timings, token_edges
+ from .tokenizer import Tokenizer
+ from .trim import trim as trim_audio
+ 
+ 
+ class Kokoro:
+-    def __init__(
+-        self,
+-        model_path: str,
+-        voices_path: str,
+-        espeak_config: EspeakConfig | None = None,
+-        vocab_config: dict | str | None = None,
+-    ):
+-        # Show useful information for bug reports
+-        log.debug(
+-            f"koko-onnx version {importlib.metadata.version('kokoro-onnx')} on {platform.platform()} {platform.version()}"
+-        )
+-        self._setup(
+-            session=create_session(model_path),
+-            model_path=model_path,
+-            voices_path=voices_path,
+-            espeak_config=espeak_config,
+-            vocab_config=vocab_config,
+-        )
++    def __init__(self, *args, **kwargs):
++        raise TypeError("Use Kokoro.from_session with explicit model_path and tokenizer")
+ 
+     @classmethod
+-    def from_session(
+-        cls,
+-        session: rt.InferenceSession,
+-        voices_path: str,
+-        espeak_config: EspeakConfig | None = None,
+-        vocab_config: dict | str | None = None,
+-    ):
++    def from_session(cls, session: rt.InferenceSession, voices_path: str, *,
++                     model_path: str, tokenizer: Tokenizer):
+         instance = cls.__new__(cls)
+-        instance._setup(
+-            session=session,
+-            model_path=session._model_path,
+-            voices_path=voices_path,
+-            espeak_config=espeak_config,
+-            vocab_config=vocab_config,
+-        )
++        instance._setup(session, model_path, voices_path, tokenizer)
+         return instance
+ 
+-    def _setup(
+-        self,
+-        session: rt.InferenceSession,
+-        model_path: str,
+-        voices_path: str,
+-        espeak_config: EspeakConfig | None,
+-        vocab_config: dict | str | None,
+-    ) -> None:
+-        self.config = KoKoroConfig(model_path, voices_path, espeak_config)
++    def _setup(self, session, model_path, voices_path, tokenizer):
++        if not all(callable(getattr(tokenizer, name, None))
++                   for name in ('phonemize', 'tokenize', 'known')) or not tokenizer.vocab:
++            raise TypeError("EXPLICIT_TOKENIZER_REQUIRED")
++        self.config = KoKoroConfig(model_path, voices_path)
+         self.config.validate()
+-
+         self.sess = session
+         self.voices: np.ndarray = np.load(voices_path)
+-        # An explicit config wins, then the one the model was exported with,
+-        # and the vocabulary shipped with the package is the last resort
+-        vocab = self._load_vocab(vocab_config) or embedded_vocab(session)
+-        self.tokenizer = Tokenizer(espeak_config, vocab=vocab)
+-
++        self.tokenizer = tokenizer
+         self._input_dtypes = input_dtypes(session)
+-        # Older exports name the token input "tokens", newer ones "input_ids"
+         self._tokens_input = (
+             "input_ids" if "input_ids" in self._input_dtypes else "tokens"
+         )
+-        # Only exports that report durations can place phonemes in time
+         self.has_timings = "duration" in {o.name for o in session.get_outputs()}
+         vocab = self.tokenizer.vocab
+         self._stops = frozenset(vocab[mark] for mark in ".!?" if mark in vocab)
+         self._spaces = frozenset(vocab[mark] for mark in " " if mark in vocab)
+-
+-    def _load_vocab(self, vocab_config: dict | str | None) -> dict:
+-        """Load vocabulary from config file or dictionary.
+-
+-        Args:
+-            vocab_config: Path to vocab config file or dictionary containing vocab.
+-
+-        Returns:
+-            Loaded vocabulary dictionary or empty dictionary if no config provided.
+-        """
+-
+-        if isinstance(vocab_config, str):
+-            with open(vocab_config, encoding="utf-8") as fp:
+-                config = json.load(fp)
+-                return config["vocab"]
+-        if isinstance(vocab_config, dict):
+-            return vocab_config["vocab"]
+-        return {}
+ 
+     def _speed_value(self, speed: float) -> float:
+         """Adapt the requested speed to what the graph accepts."""
+--- a/kokoro_onnx/config.py
++++ b/kokoro_onnx/config.py
+@@ -1,47 +1,15 @@
+-import json
+-from dataclasses import dataclass
+ from pathlib import Path
+ 
+ MAX_PHONEME_LENGTH = 510
+ SAMPLE_RATE = 24000
+ 
+ 
+-@dataclass
+-class EspeakConfig:
+-    lib_path: str | None = None
+-    data_path: str | None = None
+-
+-
+ class KoKoroConfig:
+-    def __init__(
+-        self,
+-        model_path: str,
+-        voices_path: str,
+-        espeak_config: EspeakConfig | None = None,
+-    ):
++    def __init__(self, model_path: str, voices_path: str):
+         self.model_path = model_path
+         self.voices_path = voices_path
+-        self.espeak_config = espeak_config
+ 
+     def validate(self):
+-        if not Path(self.voices_path).exists():
+-            error_msg = f"Voices file not found at {self.voices_path}"
+-            error_msg += (
+-                "\nYou can download the voices file using the following command:"
+-            )
+-            error_msg += "\nwget https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+-            raise FileNotFoundError(error_msg)
+-
+-        if not Path(self.model_path).exists():
+-            error_msg = f"Model file not found at {self.model_path}"
+-            error_msg += "\nYou can download the model file from https://github.com/thewh1teagle/kokoro-onnx/releases"
+-            raise FileNotFoundError(error_msg)
+-
+-
+-def get_vocab():
+-    with open(Path(__file__).parent / "config.json", encoding="utf-8") as fp:
+-        config = json.load(fp)
+-        return config["vocab"]
+-
+-
+-DEFAULT_VOCAB = get_vocab()
++        for value in (self.model_path, self.voices_path):
++            if not Path(value).is_file():
++                raise FileNotFoundError("KOKORO_RESOURCE_MISSING")
+--- a/kokoro_onnx/tokenizer.py
++++ b/kokoro_onnx/tokenizer.py
+@@ -1,89 +1,11 @@
+-import ctypes
+-import ctypes.util
+-import os
+-import platform
+-import sys
+-import threading
+-
+-import espeakng_loader
+-import phonemizer
+-from phonemizer.backend.espeak.wrapper import EspeakWrapper
+-
+-from .config import DEFAULT_VOCAB, MAX_PHONEME_LENGTH, EspeakConfig
+-from .log import log
+-
+-# espeak-ng holds process-global state, so concurrent phonemization returns
+-# corrupted phonemes. Inference stays outside this lock and runs concurrently.
+-_espeak_lock = threading.Lock()
++"""Explicit application-owned tokenizer; no default implementation/resources."""
++from collections.abc import Mapping
++from typing import Protocol
+ 
+ 
+-class Tokenizer:
+-    def __init__(self, espeak_config: EspeakConfig | None = None, vocab: dict = None):
+-        self.vocab = vocab or DEFAULT_VOCAB
++class Tokenizer(Protocol):
++    vocab: Mapping[str, int]
+ 
+-        if not espeak_config:
+-            espeak_config = EspeakConfig()
+-        if not espeak_config.data_path:
+-            espeak_config.data_path = espeakng_loader.get_data_path()
+-        if not espeak_config.lib_path:
+-            espeak_config.lib_path = espeakng_loader.get_library_path()
+-
+-        # Check if PHONEMIZER_ESPEAK_LIBRARY was set
+-        if os.getenv("PHONEMIZER_ESPEAK_LIBRARY"):
+-            espeak_config.lib_path = os.getenv("PHONEMIZER_ESPEAK_LIBRARY")
+-
+-        # Check that the espeak-ng library can be loaded
+-        try:
+-            ctypes.cdll.LoadLibrary(espeak_config.lib_path)
+-        except Exception as e:
+-            log.error(f"Failed to load espeak shared library: {e}")
+-            log.warning("Falling back to system wide espeak-ng library")
+-
+-            # Fallback system wide load
+-            error_info = (
+-                "Failed to load espeak-ng from fallback. Please install espeak-ng system wide.\n"
+-                "\tSee https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md\n"
+-                "\tNote: you can specify shared library path using PHONEMIZER_ESPEAK_LIBRARY environment variable.\n"
+-                f"Environment:\n\t{platform.platform()} ({platform.release()}) | {sys.version}"
+-            )
+-            espeak_config.lib_path = ctypes.util.find_library(
+-                "espeak-ng"
+-            ) or ctypes.util.find_library("espeak")
+-            if not espeak_config.lib_path:
+-                raise RuntimeError(error_info)
+-            try:
+-                ctypes.cdll.LoadLibrary(espeak_config.lib_path)
+-            except Exception as e:
+-                raise RuntimeError(f"{e}: {error_info}")
+-
+-        with _espeak_lock:
+-            EspeakWrapper.set_data_path(espeak_config.data_path)
+-            EspeakWrapper.set_library(espeak_config.lib_path)
+-
+-    @staticmethod
+-    def normalize_text(text) -> str:
+-        return text.strip()
+-
+-    def tokenize(self, phonemes, limit: int | None = MAX_PHONEME_LENGTH):
+-        """Map phonemes to token ids, dropping anything outside the vocabulary."""
+-        if limit is not None and len(phonemes) > limit:
+-            raise ValueError(f"text is too long, must be less than {limit} phonemes")
+-        return [i for i in map(self.vocab.get, phonemes) if i is not None]
+-
+-    def known(self, phonemes: str) -> str:
+-        """The phonemes that survive tokenization, aligned one to one with it."""
+-        return "".join(p for p in phonemes if p in self.vocab)
+-
+-    def phonemize(self, text, lang="en-us", norm=True) -> str:
+-        """
+-        lang can be 'en-us' or 'en-gb'
+-        """
+-        if norm:
+-            text = Tokenizer.normalize_text(text)
+-
+-        with _espeak_lock:
+-            phonemes = phonemizer.phonemize(
+-                text, lang, preserve_punctuation=True, with_stress=True
+-            )
+-        phonemes = "".join(filter(lambda p: p in self.vocab, phonemes))
+-        return phonemes.strip()
++    def phonemize(self, text: str, lang='en-us', norm=True) -> str: ...
++    def tokenize(self, phonemes: str, limit: int | None = 510) -> list[int]: ...
++    def known(self, phonemes: str) -> str: ...
+--- a/kokoro_onnx/session.py
++++ b/kokoro_onnx/session.py
+@@ -1,13 +1,10 @@
+ """Building and introspecting the onnxruntime session."""
+ 
+-import importlib.metadata
+ import json
+-import os
+ 
+ import numpy as np
+ import onnxruntime as rt
+ 
+-from .log import log
+ 
+ # Where scripts/export.py stores config.json inside the graph
+ CONFIG_KEY = "kokoro_config"
+@@ -21,68 +18,37 @@
+     "tensor(int64)": np.dtype(np.int64),
+ }
+ 
+-# Distributions shipping accelerated providers. They all install the module
+-# `onnxruntime`, so they can only be found by distribution name.
+-_ACCELERATED_DISTRIBUTIONS = (
+-    "onnxruntime-gpu",
+-    "onnxruntime-directml",
+-    "onnxruntime-openvino",
+-    "onnxruntime-rocm",
+-    "onnxruntime-qnn",
+-)
++def embedded_vocab(session: rt.InferenceSession) -> dict | None:
++    """Absent config/vocab is None; present malformed data never becomes fallback."""
++    def unique(pairs):
++        result = {}
++        for key, value in pairs:
++            if key in result:
++                raise ValueError("MALFORMED_KOKORO_METADATA")
++            result[key] = value
++        return result
+ 
+-
+-def _installed(distribution: str) -> bool:
++    metadata = session.get_modelmeta().custom_metadata_map
++    if CONFIG_KEY not in metadata:
++        return None
++    raw = metadata[CONFIG_KEY]
+     try:
+-        importlib.metadata.distribution(distribution)
+-    except importlib.metadata.PackageNotFoundError:
+-        return False
+-    return True
+-
+-
+-def resolve_providers() -> list[str]:
+-    """Pick the execution providers to run the model with.
+-
+-    ONNX_PROVIDER wins if set, otherwise every available provider is used when
+-    an accelerated onnxruntime distribution is installed (kokoro-onnx[gpu]),
+-    and plain CPU otherwise.
+-    """
+-    available = rt.get_available_providers()
+-
+-    env_provider = os.getenv("ONNX_PROVIDER")
+-    if env_provider:
+-        if env_provider not in available:
+-            log.warning(
+-                f"ONNX_PROVIDER={env_provider} is not available in this onnxruntime "
+-                f"build, available providers: {available}"
+-            )
+-        return [env_provider]
+-
+-    accelerated = [d for d in _ACCELERATED_DISTRIBUTIONS if _installed(d)]
+-    if accelerated:
+-        log.debug(f"Accelerated onnxruntime found: {accelerated}")
+-        return available
+-
+-    return ["CPUExecutionProvider"]
+-
+-
+-def create_session(model_path: str) -> rt.InferenceSession:
+-    """Load the model on the providers this installation can use."""
+-    providers = resolve_providers()
+-    log.debug(f"Providers: {providers}")
+-    return rt.InferenceSession(model_path, providers=providers)
+-
+-
+-def embedded_vocab(session: rt.InferenceSession) -> dict:
+-    """The vocabulary the model was exported with, empty if it carries none."""
+-    config = session.get_modelmeta().custom_metadata_map.get(CONFIG_KEY)
+-    if not config:
+-        return {}
+-    try:
+-        return json.loads(config)["vocab"]
+-    except (ValueError, KeyError) as error:
+-        log.warning(f"Ignoring unreadable {CONFIG_KEY} metadata: {error}")
+-        return {}
++        if not isinstance(raw, str) or len(raw.encode('utf-8')) > 262144:
++            raise ValueError()
++        config = json.loads(raw, object_pairs_hook=unique)
++        if not isinstance(config, dict):
++            raise ValueError()
++        if 'vocab' not in config:
++            return None
++        vocab = config['vocab']
++        if not isinstance(vocab, dict) or not 1 <= len(vocab) <= 4096:
++            raise ValueError()
++        if any(not isinstance(k, str) or len(k) != 1 or type(v) is not int or v < 0
++               for k, v in vocab.items()) or len(set(vocab.values())) != len(vocab) or not any(vocab.values()):
++            raise ValueError()
++        return vocab
++    except (ValueError, TypeError, UnicodeError, RecursionError):
++        raise ValueError("MALFORMED_KOKORO_METADATA") from None
+ 
+ 
+ def input_dtypes(session: rt.InferenceSession) -> dict[str, np.dtype]:

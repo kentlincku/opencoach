@@ -115,9 +115,9 @@ final class VoiceWebBridgeTests: XCTestCase {
         XCTAssertTrue(res.success)
     }
 
-    func testCloudCredentialCannotBeSentToLanEndpoint() async {
+    func testProviderKeyIsNotBoundToFixedHost() async {
         let bridge = VoiceWebBridge(credentials: InMemoryCredentialStore())
-        // Attempting to send openai providerId to local LAN endpoint must fail
+        // User-chosen endpoints: a provider id with a LAN endpoint is not rejected by host binding
         let payload: [String: Any] = [
             "id": "mismatch-1",
             "operation": "models",
@@ -125,8 +125,7 @@ final class VoiceWebBridgeTests: XCTestCase {
             "baseUrl": "http://127.0.0.1:8000/v1"
         ]
         let res = await bridge.handleMessage(dict: payload)
-        XCTAssertFalse(res.success)
-        XCTAssertEqual(res.error, "CLOUD_CREDENTIAL_ENDPOINT_MISMATCH")
+        XCTAssertNotEqual(res.error, "CLOUD_CREDENTIAL_ENDPOINT_MISMATCH")
     }
 
     func testSchemaLimitsEnforcedFailClosed() async {

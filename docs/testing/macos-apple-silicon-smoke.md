@@ -118,7 +118,6 @@ node --test tests/*.test.cjs
 node --check apps/desktop/main.cjs
 node --check apps/desktop/preload.cjs
 node --check apps/desktop/sidecar-client.cjs
-node --check apps/desktop/hermes-bridge.cjs
 git show --check --format= "$TEST_SHA"
 git diff --check
 ```

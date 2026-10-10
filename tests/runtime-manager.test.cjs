@@ -6,6 +6,9 @@ const os = require('node:os');
 const path = require('node:path');
 const yazl = require('yazl');
 const { RuntimeManager, validateZipEntry } = require('../apps/desktop/runtime-manager.cjs');
+const { canonicalInventory } = require('../apps/desktop/tree-integrity.cjs');
+const zipContents = new Map();
+// All runtime validation callbacks in this file are MEMORY doubles, not native probe evidence.
 
 async function zipWith(name, content) {
   const zip = new yazl.ZipFile();
@@ -13,12 +16,20 @@ async function zipWith(name, content) {
   zip.end();
   const chunks = [];
   for await (const chunk of zip.outputStream) chunks.push(chunk);
-  return Buffer.concat(chunks);
+  const buffer = Buffer.concat(chunks);
+  zipContents.set(buffer, {name, content});
+  return buffer;
 }
 function manifestFor(buffer, hash = crypto.createHash('sha256').update(buffer).digest('hex')) {
-  return {schemaVersion: 1, release: 'runtime-v1', artifacts: {'darwin-arm64': {
+  const {name, content} = zipContents.get(buffer);
+  const inventory = canonicalInventory([{path: name, bytes: Buffer.byteLength(content), sha256: crypto.createHash('sha256').update(content).digest('hex')}]);
+  const binding = {modelId: 'fixture', archiveSha256: 'a'.repeat(64)};
+  return {schemaVersion: 2, release: 'runtime-v1', artifacts: {'darwin-arm64': {
     url: 'https://github.com/kentlin/voice-practice/releases/download/runtime-v1/runtime.zip', sha256: hash,
     bytes: buffer.length, entrypoint: 'bin/voice-runtime', archive: 'zip',
+    files: inventory.files, treeDigest: inventory.treeDigest,
+    provenance: {sourceRevision: 'b'.repeat(40), sourceUrl: 'https://example.com/test-fixture', license: {spdx: 'MIT', url: 'https://example.com/license'}},
+    modelBindings: {sttRoot: binding, onnxModel: {...binding, path: 'model.bin'}, onnxVoices: {...binding, path: 'voices.bin'}},
   }}};
 }
 function fetchBuffer(buffer) {
@@ -39,6 +50,11 @@ test('installs verified zip atomically and records activation metadata', async t
   assert.equal(await fs.readFile(result.entrypoint, 'utf8'), 'ok');
   const metadata = JSON.parse(await fs.readFile(path.join(userData, 'runtime/current.json')));
   assert.equal(metadata.current.release, 'runtime-v1');
+  assert.equal(metadata.schemaVersion, 2);
+  assert.equal(metadata.current.sha256, crypto.createHash('sha256').update(archive).digest('hex'));
+  assert.deepEqual(Object.keys(metadata.current).sort(), ['kind', 'modelId', 'generation', 'release', 'platformKey',
+    'directory', 'entrypoint', 'sha256', 'treeDigest', 'activatedAt'].sort());
+  assert.equal(Object.hasOwn(metadata.current, 'identity'), false);
   assert.equal(metadata.previous, null);
   assert.equal((await manager.status()).state, 'installed');
 });
@@ -134,7 +150,7 @@ test('hash mismatch leaves no active or partial runtime', async t => {
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime bad hash '));
   t.after(() => fs.rm(userData, {recursive: true, force: true}));
   const archive = await zipWith('bin/voice-runtime', 'bad');
-  const manager = new RuntimeManager({userData, manifest: manifestFor(archive, '0'.repeat(64)), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive)});
+  const manager = new RuntimeManager({userData, manifest: manifestFor(archive, '0'.repeat(64)), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive), healthCheck: async () => true}); // MEMORY gate
   await assert.rejects(manager.install(), /SHA256_MISMATCH/);
   assert.equal((await manager.status()).state, 'unavailable');
 });
@@ -157,6 +173,7 @@ test('stream aborts as soon as downloaded bytes exceed the signed manifest size'
     arch: 'arm64',
     fetchImpl,
     onProgress: ({bytes}) => { largestProgress = Math.max(largestProgress, bytes); },
+    healthCheck: async () => true, // MEMORY gate; download must reject before this
   });
   await assert.rejects(manager.install(), /BYTE_COUNT_EXCEEDED/);
   assert.ok(largestProgress <= expected.length);
@@ -172,7 +189,7 @@ test('rejects an untrusted redirect before contacting its destination', async t 
     requested.push(String(url));
     return new Response(null, {status: 302, headers: {location: 'https://evil.example/runtime.zip'}});
   };
-  const manager = new RuntimeManager({userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl});
+  const manager = new RuntimeManager({userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl, healthCheck: async () => true}); // MEMORY gate
   await assert.rejects(manager.install(), /UNTRUSTED_ARTIFACT_URL/);
   assert.equal(requested.length, 1);
 });
@@ -196,186 +213,139 @@ test('directory preparation failure does not leave install permanently running',
   assert.equal(result.state, 'installed');
 });
 
+test('v2 runtime trust gate verifies exact bytes before callback and status rejects rewritten cache', async t => {
+  const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'b-runtime-trust-'));
+  t.after(() => fs.rm(userData, {recursive: true, force: true}));
+  const archive = await zipWith('bin/voice-runtime', 'ok');
+  const options = {userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive)};
+  let calls = 0;
+  const manager = new RuntimeManager({...options, healthCheck: async () => { calls++; return true; }}); // MEMORY gate
+  const installed = await manager.install();
+  assert.equal((await manager.status()).state, 'installed');
+  await fs.writeFile(installed.entrypoint, 'NO');
+  assert.equal((await manager.status()).state, 'unavailable');
+  await fs.writeFile(installed.entrypoint, 'ok');
+  await fs.writeFile(path.join(installed.directory, 'inner.json'), '{}');
+  assert.equal((await manager.status()).state, 'unavailable');
+  await fs.rm(path.join(installed.directory, 'inner.json'));
+  await fs.rm(installed.entrypoint);
+  assert.equal((await manager.status()).state, 'unavailable');
+  await fs.writeFile(installed.entrypoint, 'ok');
+  const bad = manifestFor(archive);
+  bad.artifacts['darwin-arm64'].files = [{path: 'bin/voice-runtime', bytes: 2, sha256: '0'.repeat(64)}];
+  bad.artifacts['darwin-arm64'].treeDigest = canonicalInventory(bad.artifacts['darwin-arm64'].files).treeDigest;
+  await assert.rejects(new RuntimeManager({...options, manifest: bad, healthCheck: async () => { calls++; return true; }}).install());
+  assert.equal(calls, 1, 'invalid payload must not reach MEMORY gate');
+  assert.equal((await manager.status()).state, 'installed');
+  await assert.rejects(new RuntimeManager(options).install(), /RUNTIME_VALIDATION_REQUIRED/);
+  await fs.writeFile(path.join(userData, 'runtime/current.json'), Buffer.alloc(4 * 1024 * 1024 + 1, 32));
+  assert.equal((await manager.status()).state, 'unavailable');
+});
+
+test('shared transaction installs immutable G1/G2/G3 and only original pin owner permits retention cleanup', async t => {
+  const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'b2-generations-'));
+  t.after(() => fs.rm(userData, {recursive: true, force: true}));
+  const archive = await zipWith('bin/voice-runtime', 'original bytes');
+  const options = {userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive), healthCheck: async () => true};
+  const first = new RuntimeManager(options);
+  const g1 = await first.install();
+  assert.match(g1.generation, /^g-[0-9a-f]{64}$/);
+  const owner = {};
+  const pinned = await first.pinCurrent(owner);
+  const second = new RuntimeManager(options);
+  assert.equal(first.coordinator, second.coordinator);
+  const g2 = await second.install();
+  const g3 = await new RuntimeManager(options).install();
+  assert.equal(new Set([g1.directory, g2.directory, g3.directory]).size, 3);
+  assert.equal(await fs.readFile(pinned.entrypoint, 'utf8'), 'original bytes');
+  assert.equal(await pinned.release({}), false);
+  assert.equal(await fs.readFile(g1.entrypoint, 'utf8'), 'original bytes');
+  assert.equal(await pinned.release(owner), true);
+  assert.equal(await pinned.release(), false, 'consumed token never accepts an absent owner');
+  await assert.rejects(fs.stat(g1.directory), {code: 'ENOENT'});
+  assert.equal(await fs.readFile(g2.entrypoint, 'utf8'), 'original bytes');
+  assert.equal((await second.status()).directory, g3.directory);
+});
+
+test('candidate validation uses original MEMORY pins, strict true and post-callback inventory', async t => {
+  const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'b2-candidate-'));
+  t.after(() => fs.rm(userData, {recursive: true, force: true}));
+  const archive = await zipWith('bin/voice-runtime', 'ok');
+  const options = {userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive)};
+  const stable = new RuntimeManager({...options, healthCheck: async () => true});
+  const g1 = await stable.install();
+  let held, candidate;
+  const owner = {};
+  const rejected = new RuntimeManager({...options, healthCheck: async (entry, context) => {
+    candidate = entry;
+    assert.equal(context.authority, 'MEMORY');
+    held = context.pin(owner); // synchronous before any await, not native termination proof
+    assert.equal(held.directory, path.dirname(path.dirname(entry)));
+    return 'truthy is not validation';
+  }});
+  await assert.rejects(rejected.install(), /RUNTIME_HEALTH_CHECK_FAILED/);
+  assert.equal(await fs.readFile(candidate, 'utf8'), 'ok');
+  assert.equal((await stable.status()).directory, g1.directory);
+  assert.equal(await held.release({}), false);
+  assert.equal(await held.release(owner), true);
+  await assert.rejects(fs.stat(candidate), {code: 'ENOENT'});
+  const rewrite = new RuntimeManager({...options, healthCheck: async entry => {
+    await fs.writeFile(entry, 'NO'); return true;
+  }});
+  await assert.rejects(rewrite.install(), /INVENTORY/);
+  assert.equal((await stable.status()).directory, g1.directory);
+});
+
+test('metadata commit is the cancellation boundary, including injected writer failure after rename', async t => {
+  const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'b2-commit-'));
+  t.after(() => fs.rm(userData, {recursive: true, force: true}));
+  const archive = await zipWith('bin/voice-runtime', 'ok');
+  const options = {userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive), healthCheck: async () => true};
+  const stable = new RuntimeManager(options);
+  const g1 = await stable.install();
+  const before = await fs.readFile(path.join(userData, 'runtime/current.json'));
+  let pre;
+  pre = new RuntimeManager({...options, writeMetadata: async (_file, _value, gate) => { pre.cancel(); await gate.commit(); }});
+  await assert.rejects(pre.install(), error => error.name === 'AbortError');
+  assert.deepEqual(await fs.readFile(path.join(userData, 'runtime/current.json')), before);
+  const silent = new RuntimeManager({...options, writeMetadata: async () => {}});
+  await assert.rejects(silent.install(), /METADATA_NOT_COMMITTED/);
+  let post, lateCommit;
+  post = new RuntimeManager({...options, writeMetadata: async (_file, _value, gate) => {
+    lateCommit = gate.commit;
+    await gate.commit(); post.cancel(); throw new Error('AFTER_RENAME');
+  }});
+  const g2 = await post.install();
+  assert.equal(g2.state, 'installed');
+  assert.equal(g2.restartRequired, true);
+  assert.equal(g2.warning, 'AFTER_RENAME');
+  assert.equal((await stable.status()).directory, g2.directory);
+  assert.equal(await fs.readFile(g1.entrypoint, 'utf8'), 'ok');
+  assert.throws(lateCommit, /METADATA_COMMIT_CLOSED/);
+  assert.equal((await post.install()).state, 'installed', 'old operation cannot retain controller ownership');
+});
+
+test('strict metadata tuple rejects malformed fields without throwing or granting pins', async t => {
+  const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'b2-metadata-'));
+  t.after(() => fs.rm(userData, {recursive: true, force: true}));
+  const archive = await zipWith('bin/voice-runtime', 'ok');
+  const manager = new RuntimeManager({userData, manifest: manifestFor(archive), platform: 'darwin', arch: 'arm64', fetchImpl: fetchBuffer(archive), healthCheck: async () => true});
+  await manager.install();
+  const filename = path.join(userData, 'runtime/current.json');
+  const good = JSON.parse(await fs.readFile(filename));
+  for (const change of [x => {x.schemaVersion = 1;}, x => {x.current.kind = 'model';}, x => {x.current.directory = {};},
+    x => {x.current.generation = '../escape';}, x => {x.current.treeDigest = '0'.repeat(64);},
+    x => {x.current.extra = true;}, x => {x.previous = {directory: []};},
+    x => {x.current.activatedAt = '2026-99-99T99:99:99.000Z';}]) {
+    const bad = structuredClone(good); change(bad);
+    await fs.writeFile(filename, JSON.stringify(bad));
+    assert.equal((await manager.status()).state, 'unavailable');
+    await assert.rejects(manager.pinCurrent({}));
+  }
+});
+
 test('archive entry validation rejects zip-slip and symlink entries', () => {
   assert.throws(() => validateZipEntry({fileName: '../evil', externalFileAttributes: 0}), /UNSAFE_ARCHIVE_ENTRY/);
   assert.throws(() => validateZipEntry({fileName: '/evil', externalFileAttributes: 0}), /UNSAFE_ARCHIVE_ENTRY/);
   assert.throws(() => validateZipEntry({fileName: 'link', externalFileAttributes: 0o120777 << 16}), /SYMLINK/);
-});
-
-test('packaged app selects valid embedded runtime when userData has no installed cache', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime embedded '));
-  t.after(() => fs.rm(root, {recursive: true, force: true}));
-  const resourcesPath = path.join(root, 'resources');
-  const runtimeDir = path.join(resourcesPath, 'runtime');
-  await fs.mkdir(runtimeDir, {recursive: true});
-
-  const fixtureFiles = {
-    'voice-runtime': Buffer.from('embedded-runtime-binary'),
-    '_internal/default.metallib': Buffer.from('metal-default'),
-    '_internal/mlx.metallib': Buffer.from('metal-root'),
-    '_internal/mlx/lib/mlx.metallib': Buffer.from('metal-lib'),
-  };
-  for (const [relative, bytes] of Object.entries(fixtureFiles)) {
-    const target = path.join(runtimeDir, relative);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, bytes, { mode: relative === 'voice-runtime' ? 0o755 : 0o600 });
-  }
-  const binContent = fixtureFiles['voice-runtime'];
-  const binHash = crypto.createHash('sha256').update(binContent).digest('hex');
-  const binPath = path.join(runtimeDir, 'voice-runtime');
-  const files = Object.fromEntries(Object.entries(fixtureFiles).sort(([a], [b]) => a.localeCompare(b)).map(([relative, bytes]) => [relative, {
-    bytes: bytes.length,
-    sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
-  }]));
-  const treeFrame = Object.entries(files).map(([relative, entry]) => `${relative}\0${entry.bytes}\0${entry.sha256}\n`).join('');
-
-  const metadata = {
-    schemaVersion: 1,
-    platform: 'darwin-arm64',
-    entrypoint: 'voice-runtime',
-    bytes: binContent.length,
-    sha256: binHash,
-    fileCount: Object.keys(files).length,
-    treeSha256: crypto.createHash('sha256').update(treeFrame).digest('hex'),
-    files,
-  };
-  await fs.writeFile(path.join(runtimeDir, 'metadata.json'), JSON.stringify(metadata));
-
-  const { resolveEmbeddedRuntime } = require('../apps/desktop/runtime-manager.cjs');
-  const embedded = await resolveEmbeddedRuntime({resourcesPath, platform: 'darwin', arch: 'arm64'});
-  assert.equal(embedded?.state, 'embedded');
-  assert.equal(embedded?.entrypoint, binPath);
-});
-
-test('embedded runtime rejects path escape, tampered hash or size mismatch', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime invalid embedded '));
-  t.after(() => fs.rm(root, {recursive: true, force: true}));
-  const resourcesPath = path.join(root, 'resources');
-  const runtimeDir = path.join(resourcesPath, 'runtime');
-  await fs.mkdir(runtimeDir, {recursive: true});
-
-  const { resolveEmbeddedRuntime } = require('../apps/desktop/runtime-manager.cjs');
-
-  // Traversal entrypoint in metadata
-  await fs.writeFile(path.join(runtimeDir, 'metadata.json'), JSON.stringify({
-    schemaVersion: 1,
-    platform: 'darwin-arm64',
-    entrypoint: '../../escape-bin',
-    bytes: 10,
-    sha256: '0'.repeat(64),
-  }));
-  const escapeRes = await resolveEmbeddedRuntime({resourcesPath, platform: 'darwin', arch: 'arm64'});
-  assert.equal(escapeRes, null);
-
-  // Tampered hash
-  const binContent = Buffer.from('real-content');
-  await fs.writeFile(path.join(runtimeDir, 'voice-runtime'), binContent);
-  await fs.writeFile(path.join(runtimeDir, 'metadata.json'), JSON.stringify({
-    schemaVersion: 1,
-    platform: 'darwin-arm64',
-    entrypoint: 'voice-runtime',
-    bytes: binContent.length,
-    sha256: 'wronghash'.padEnd(64, '0'),
-  }));
-  const tamperedRes = await resolveEmbeddedRuntime({resourcesPath, platform: 'darwin', arch: 'arm64'});
-  assert.equal(tamperedRes, null);
-});
-
-test('status() re-validates Windows runtime tree and returns unavailable on corruption', async t => {
-  const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime-win-tree-'));
-  t.after(() => fs.rm(userData, {recursive: true, force: true}));
-
-  // Create a minimal PE x64 binary for voice-runtime.exe
-  const pe = Buffer.alloc(128);
-  pe.write('MZ', 0, 'ascii');
-  pe.writeUInt32LE(64, 0x3c);
-  pe.write('PE\0\0', 64, 'ascii');
-  pe.writeUInt16LE(0x8664, 68);
-
-  const dataContent = Buffer.from('payload-data');
-  const exeHash = crypto.createHash('sha256').update(pe).digest('hex');
-  const dataHash = crypto.createHash('sha256').update(dataContent).digest('hex');
-
-  const files = [
-    { path: 'payload.dat', bytes: dataContent.length, sha256: dataHash },
-    { path: 'voice-runtime.exe', bytes: pe.length, sha256: exeHash },
-  ].sort((a, b) => a.path.localeCompare(b.path));
-
-  const treeHasher = crypto.createHash('sha256');
-  for (const f of files) treeHasher.update(`${f.path}:${f.bytes}:${f.sha256}\n`);
-  const digest = treeHasher.digest('hex');
-
-  const treeManifest = JSON.stringify({
-    schemaVersion: 1,
-    platform: 'win32-x64-cpu',
-    entrypoint: 'voice-runtime.exe',
-    treeDigest: digest,
-    fileCount: files.length,
-    files,
-  });
-
-  const zip = new yazl.ZipFile();
-  zip.addBuffer(pe, 'voice-runtime.exe', { mode: 0o100755 });
-  zip.addBuffer(dataContent, 'payload.dat', { mode: 0o100644 });
-  zip.addBuffer(Buffer.from(treeManifest), 'runtime-manifest.json', { mode: 0o100644 });
-  zip.end();
-  const chunks = [];
-  for await (const chunk of zip.outputStream) chunks.push(chunk);
-  const archive = Buffer.concat(chunks);
-  const archiveHash = crypto.createHash('sha256').update(archive).digest('hex');
-
-  const manifest = {
-    schemaVersion: 1,
-    release: 'runtime-v1',
-    artifacts: {
-      'win32-x64-cpu': {
-        url: 'https://github.com/kentlin/voice-practice/releases/download/runtime-v1/runtime-win32.zip',
-        sha256: archiveHash,
-        bytes: archive.length,
-        entrypoint: 'voice-runtime.exe',
-        archive: 'zip',
-        files,
-        fileCount: files.length,
-        treeDigest: digest,
-      },
-    },
-  };
-
-  const manager = new RuntimeManager({
-    userData,
-    manifest,
-    platform: 'win32',
-    arch: 'x64',
-    flavor: 'cpu',
-    fetchImpl: fetchBuffer(archive),
-    healthCheck: async () => true,
-  });
-
-  const installResult = await manager.install();
-  assert.equal(installResult.state, 'installed');
-
-  // Verify status is installed
-  const statusOk = await manager.status();
-  assert.equal(statusOk.state, 'installed');
-
-  // Corrupt payload.dat and forge the self-describing internal manifest to match.
-  // The trusted outer fileset must still reject the replacement bytes.
-  const payloadPath = path.join(statusOk.directory, 'payload.dat');
-  const forgedData = Buffer.from('corrupted-payload-data');
-  await fs.writeFile(payloadPath, forgedData);
-  const forgedFiles = [
-    {path: 'payload.dat', bytes: forgedData.length, sha256: crypto.createHash('sha256').update(forgedData).digest('hex')},
-    files[1],
-  ];
-  const forgedHasher = crypto.createHash('sha256');
-  for (const item of forgedFiles) forgedHasher.update(`${item.path}:${item.bytes}:${item.sha256}\n`);
-  await fs.writeFile(path.join(statusOk.directory, 'runtime-manifest.json'), JSON.stringify({
-    schemaVersion: 1, platform: 'win32-x64-cpu', entrypoint: 'voice-runtime.exe',
-    treeDigest: forgedHasher.digest('hex'), fileCount: forgedFiles.length, files: forgedFiles,
-  }));
-
-  // Verify status detects corruption and returns unavailable
-  const statusCorrupted = await manager.status();
-  assert.equal(statusCorrupted.state, 'unavailable');
-  assert.equal(statusCorrupted.reason, 'RUNTIME_TREE_CORRUPTED');
 });

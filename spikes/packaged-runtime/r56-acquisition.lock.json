@@ -1,0 +1,76 @@
+{
+ "schemaVersion": 1,
+ "purpose": "Pinned public sources for the macOS voice runtime build (scripts/ci-build-macos-runtime.py). Every file is verified by size and sha256; no file is bundled as a model.",
+ "files": [
+  {
+   "path": "kokoro/kokoro-v1.0.fp16.onnx",
+   "bytes": 163527961,
+   "sha256": "f3a290d384fbb27966d462905c71a46cef9e5fd00516b40df32a0b4afe77ac96",
+   "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
+   "license": "Apache-2.0 (hexgrad/Kokoro-82M weights; kokoro-onnx export)"
+  },
+  {
+   "path": "kokoro/voices-v1.0.bin",
+   "bytes": 28214398,
+   "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+   "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
+   "license": "Apache-2.0 (hexgrad/Kokoro-82M voices)"
+  },
+  {
+   "path": "misaki/en/us_gold.json",
+   "bytes": 3000469,
+   "sha256": "dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f",
+   "url": "https://raw.githubusercontent.com/hexgrad/misaki/e820629b96334db28227df37f280e4836d46fadb/misaki/data/us_gold.json",
+   "license": "Apache-2.0 (hexgrad/misaki)"
+  },
+  {
+   "path": "misaki/en/us_silver.json",
+   "bytes": 3099517,
+   "sha256": "de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475",
+   "url": "https://raw.githubusercontent.com/hexgrad/misaki/e820629b96334db28227df37f280e4836d46fadb/misaki/data/us_silver.json",
+   "license": "Apache-2.0 (hexgrad/misaki)"
+  },
+  {
+   "path": "spacy/en_core_web_sm-3.8.0-py3-none-any.whl",
+   "bytes": 12806118,
+   "sha256": "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85",
+   "url": "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+   "license": "MIT (explosion/spacy-models)"
+  },
+  {
+   "path": "mlx-whisper/mlx_whisper-0.4.3-py3-none-any.whl",
+   "bytes": 890544,
+   "sha256": "6b82b6597a994643a3e5496c7bc229a672e5ca308458455bfe276e76ae024489",
+   "url": "https://files.pythonhosted.org/packages/22/b7/a35232812a2ccfffcb7614ba96a91338551a660a0e9815cee668bf5743f0/mlx_whisper-0.4.3-py3-none-any.whl",
+   "license": "MIT (ml-explore/mlx-examples whisper; assets from openai/whisper MIT)"
+  },
+  {
+   "path": "langcodes/data/language-subtag-registry.txt",
+   "bytes": 715867,
+   "sha256": "c7b8078016e99de39bf5e758a376d54ac51bccb3c4e0d89502d2b11cb19070ce",
+   "url": "https://raw.githubusercontent.com/rspeer/langcodes/49beea8e20ae26c2dead7bd77f41cfba0e0ab533/langcodes/data/language-subtag-registry.txt",
+   "license": "MIT (rspeer/langcodes)"
+  },
+  {
+   "path": "langcodes/data_dicts.py",
+   "bytes": 113788,
+   "sha256": "f0058d862155868728592920b816378c4b7237f28e6c4dbab779e02945df9f5a",
+   "url": "https://raw.githubusercontent.com/rspeer/langcodes/49beea8e20ae26c2dead7bd77f41cfba0e0ab533/langcodes/data_dicts.py",
+   "license": "MIT (rspeer/langcodes)"
+  },
+  {
+   "path": "langcodes/language_lists.py",
+   "bytes": 8650,
+   "sha256": "919e5a8dcf88d55b77eb52ea0dc802cd426d8abd42833c0b57a30d135b333958",
+   "url": "https://raw.githubusercontent.com/rspeer/langcodes/49beea8e20ae26c2dead7bd77f41cfba0e0ab533/langcodes/language_lists.py",
+   "license": "MIT (rspeer/langcodes)"
+  }
+ ],
+ "pythonInterpreter": {
+  "note": "python-build-standalone CPython frozen into the runtime (same build uv installs for 3.11.15).",
+  "version": "3.11.15",
+  "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260718/cpython-3.11.15%2B20260718-aarch64-apple-darwin-install_only.tar.gz",
+  "bytes": 27241978,
+  "sha256": "125587d03495bebdf30ec9e549a8469c97c0925d863ff401f24f157fd44d91d6"
+ }
+}

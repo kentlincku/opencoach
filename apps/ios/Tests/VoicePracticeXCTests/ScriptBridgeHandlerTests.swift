@@ -37,10 +37,26 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         for payload: [String: Any] in [
             ["text": ""], ["text": String(repeating: "x", count: 12001)],
             ["text": "Hello", "rate": true], ["text": "Hello", "rate": "fast"],
-            ["text": "Hello", "voiceId": 42], ["text": "Hello", "rate": 9.0], ["text": "Hello", "language": "fr-FR"],
+            ["text": "Hello", "voiceId": 42], ["text": "Hello", "rate": 9.0], ["text": "Hello", "pitch": 1.5], ["text": "Hello", "pitch": true], ["text": "Hello", "language": "fr-FR"],
             ["text": "Hello", "unexpected": "value"], ["text": "Hello", "voiceId": "missing.voice"]
         ] {
             XCTAssertThrowsError(try NativeSpeechService.makeUtterance(payload))
+        }
+    }
+
+    func testRetroVoicesAreNeverPreferredOverNaturalOnes() {
+        XCTAssertFalse(NativeSpeechService.isNaturalVoice("com.apple.eloquence.en-US.Eddy"))
+        XCTAssertFalse(NativeSpeechService.isNaturalVoice("com.apple.speech.synthesis.voice.Bubbles"))
+        XCTAssertTrue(NativeSpeechService.isNaturalVoice("com.apple.voice.compact.en-US.Samantha"))
+        XCTAssertTrue(NativeSpeechService.isNaturalVoice("com.apple.voice.premium.en-US.Zoe"))
+        let voices = NativeSpeechService.englishVoices()
+        if let natural = voices.firstIndex(where: { NativeSpeechService.isNaturalVoice($0.identifier) }),
+           let retro = voices.firstIndex(where: { !NativeSpeechService.isNaturalVoice($0.identifier) && $0.quality == voices[natural].quality }) {
+            XCTAssertLessThan(natural, retro)
+        }
+        if voices.contains(where: { NativeSpeechService.isNaturalVoice($0.identifier) }),
+           let picked = try? NativeSpeechService.makeUtterance(["text": "Hello."]).voice {
+            XCTAssertTrue(NativeSpeechService.isNaturalVoice(picked.identifier), picked.identifier)
         }
     }
 
@@ -52,6 +68,8 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         XCTAssertFalse(voices.isEmpty, "Install an English system voice on the device")
         let value = try NativeSpeechService.makeUtterance(["text": "Hello. Let's practice English."])
         XCTAssertEqual(value.voice?.quality, voices.first?.quality)
+        XCTAssertTrue(NativeSpeechService.isNaturalVoice(value.voice?.identifier ?? ""), value.voice?.identifier ?? "none")
+        print("NATIVE_SPEECH_VOICE=\(value.voice?.identifier ?? "none")")
         let service = NativeSpeechService()
         defer { service.stop() }
         var didStart = false
@@ -129,13 +147,17 @@ final class ScriptBridgeHandlerTests: XCTestCase {
         let overflow = try await view.evaluateJavaScriptAllowingNil("document.documentElement.scrollWidth > window.innerWidth") as? Bool
         XCTAssertEqual(overflow, false)
         for (name, script) in [
-            ("settings", "document.getElementById('nativeSpeechSettings').scrollIntoView({block:'center'});"),
+            // Voice selection now lives in each coach profile (no global voice section).
+            ("settings", "document.getElementById('apiBaseUrl').scrollIntoView({block:'center'});"),
             ("chat", "closeSettingsModal(); switchTab('free');"),
             ("lessons", "switchTab('lesson');"),
             ("coaches", "openCoachModal();"),
+            ("coach editor", "openCoachEditor('af_heart');"),
             ("library", "closeCoachModal(); openLessonManager();")
         ] {
-            _ = try await view.evaluateJavaScriptAllowingNil(script)
+            // Some UI actions return a Promise (switchTab returns its cleanup barrier);
+            // WKWebView cannot hand a Promise back, so discard the value in JS.
+            _ = try await view.evaluateJavaScriptAllowingNil("{ \(script) } undefined;")
             try await Task.sleep(nanoseconds: 300_000_000)
             let overflow = try await view.evaluateJavaScriptAllowingNil("document.documentElement.scrollWidth > innerWidth") as? Bool
             XCTAssertEqual(overflow, false, name)

@@ -1,5 +1,5 @@
-# Install into a dedicated Python 3.11/3.12 virtual environment on Apple Silicon.
-numpy
-kokoro>=0.9
-mlx-whisper
-soundfile
+# Darwin arm64 CPython 3.11 uses the complete exact wheel/source lock at
+# spikes/packaged-runtime/requirements-darwin-arm64-cp311.lock.json.
+# Use scripts/r55-dependencies.py in a reviewed dedicated venv; never resolve
+# these former development ranges or run setup-macos.sh for engineering builds.
+# D2 resources and managed runtime qualification remain separate requirements.

@@ -25,7 +25,7 @@
     const normalized = normalizeTtsMode(mode);
     if (normalized === TTS_MODES.SYSTEM) return false;
     if (normalized === TTS_MODES.KOKORO) return true;
-    return runtimeKind === 'electron' || runtimeKind === 'android';
+    return runtimeKind === 'electron';
   }
 
   function shouldLoadBrowserKokoro({ mode, runtimeKind } = {}) {

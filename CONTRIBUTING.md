@@ -9,7 +9,7 @@ Requirements:
 - Node.js 22 and npm
 - Python 3.11+
 - `uv` for native Python runtime work
-- platform SDKs only when changing iOS or Android code
+- platform SDKs only when changing iOS code
 
 ```bash
 npm ci
@@ -36,7 +36,7 @@ Do not claim a platform, signing, notarization, model, microphone, or packaged-p
 Changes to these areas require focused negative tests:
 
 - Electron IPC and preload APIs
-- OAuth, API keys, safe storage, Keychain, or Android Keystore
+- OAuth, API keys, safe storage, or Keychain
 - WebView navigation and native message bridges
 - local endpoint allowlists
 - runtime/model archive extraction and path validation

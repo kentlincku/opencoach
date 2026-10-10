@@ -16,10 +16,73 @@ os.environ.setdefault("VOICE_RUNTIME_TEMP_DIR", tempfile.gettempdir())
 from native.python.voice_runtime import server
 
 
+class PureRuntimeProbeTest(unittest.TestCase):
+    def test_actual_probe_producer_maps_platform_arch_and_js_validator_accepts_wire_result(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        actual = []
+        for host, machine, expected_platform, expected_arch in [
+            ("win32", "AMD64", "windows", "x64"), ("darwin", "aarch64", "darwin", "arm64")
+        ]:
+            with patch.object(server.sys, "platform", host), patch.object(server.platform, "machine", return_value=machine):
+                response = server.runtime_probe()
+                self.assertEqual((response['platform'], response['arch']), (expected_platform, expected_arch))
+                actual.append([response, host, expected_arch])
+        code = "const {isCompatibleRuntimeProbe}=require('./apps/desktop/runtime-health.cjs');const fs=require('node:fs');console.log(JSON.stringify(JSON.parse(fs.readFileSync(0,'utf8')).map(x=>isCompatibleRuntimeProbe(...x))));"
+        compared = subprocess.run(["node", "-e", code], cwd=ROOT, input=json.dumps(actual), text=True, capture_output=True, timeout=10)
+        self.assertEqual(compared.returncode, 0, compared.stderr)
+        self.assertEqual(json.loads(compared.stdout), [True, True])
+        output, errors = StringIO(), StringIO()
+        from contextlib import redirect_stderr
+        # Exercise original JSONL dispatcher in-memory, never spawn a native runtime.
+        with (patch.object(server.sys, "stdin", StringIO('{"id":"p","method":"runtime.probe","params":{}}\n')),
+              redirect_stdout(output), redirect_stderr(errors)):
+            server.serve()
+        messages = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0], {"event": "ready", "protocol": 1})
+        self.assertEqual(messages[1], {"id": "p", "success": True, "result": server.runtime_probe()})
+        self.assertEqual(errors.getvalue(), "")
+
+    def test_probe_is_pure_and_dispatch_requires_exact_empty_params(self):
+        self.assertTrue(callable(getattr(server, "runtime_probe", None)))
+        from contextlib import redirect_stdout
+        from io import StringIO
+        output = StringIO()
+        # Calls to model/health machinery are fatal, never swallowed assertions.
+        with patch.object(server, "backend_registry", None), patch.object(
+            server, "create_backend_registry", side_effect=RuntimeError("MODEL_INIT_FORBIDDEN")
+        ), patch.object(server, "health_capabilities", side_effect=RuntimeError("HEALTH_FORBIDDEN")), patch.object(
+            server, "runtime_platform", return_value="windows"
+        ), patch.object(server, "runtime_arch", return_value="x64"), redirect_stdout(output):
+            expected = {"probeVersion": 1, "protocol": 1, "platform": "windows", "arch": "x64", "executable": True}
+            self.assertEqual(server.runtime_probe(), expected)
+            self.assertEqual(server.dispatch("runtime.probe", {}), expected)
+            for params in [None, [], True, "", {"ready": False}, {"protocol": 1}]:
+                with self.subTest(params=params), self.assertRaises(server.BackendInputError):
+                    server.dispatch("runtime.probe", params)
+        self.assertEqual(output.getvalue(), "")
+
+
+class Utf8PipeTest(unittest.TestCase):
+    def test_pipes_are_utf8_whatever_the_locale(self):
+        # Node writes UTF-8; on Windows Python defaults pipes to the ANSI code page (cp950),
+        # which turns an LLM's em dash into mojibake that the English G2P rejects. An id
+        # echo cannot detect this (a single-byte code page round-trips bytes), so check the
+        # decoded text the server sees.
+        code = ("import sys; sys.path.insert(0, sys.argv[1]); import server; server._utf8_stdio(); "
+                "line = sys.stdin.readline(); print(len(line.strip()), sys.stdin.encoding, sys.stdout.encoding)")
+        env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+        out = subprocess.run([sys.executable, "-c", code, str(SERVER.parent)], input="\u2014\u0101\n".encode("utf-8"),
+                             capture_output=True, env=env, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.decode().split(), ["2", "utf-8", "utf-8"])
+
+
 class RuntimeServerContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        env = {**os.environ, "VOICE_RUNTIME_FAKE": "1"}
+        env = {**os.environ, "VOICE_RUNTIME_FAKE": "1", "VOICE_RUNTIME_TEMP_DIR": tempfile.gettempdir()}
         cls.proc = subprocess.Popen(
             [sys.executable, "-u", str(SERVER)],
             stdin=subprocess.PIPE,
@@ -214,7 +277,9 @@ class SpeechTextFoldingTest(unittest.TestCase):
 
     def test_markdown_lists_and_free_dashes_become_pauses(self):
         from native.python.voice_runtime.text import clean_text_for_speech
+        from native.python.voice_runtime.english_g2p import preflight
         reply = 'Here are our prices:\n\n- **Small:** $3.50\n- **Large:** $5.50\n\nAnything else?'
         cleaned = clean_text_for_speech(reply)
         self.assertEqual(cleaned, 'Here are our prices: Small: $3.50, Large: $5.50. Anything else?')
+        preflight(cleaned)
         self.assertEqual(clean_text_for_speech("It's well-known - really."), "It's well-known, really.")

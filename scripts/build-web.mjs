@@ -70,6 +70,26 @@ for (const voiceId of voiceIds) {
     path.join(voiceDir, `${voiceId}.bin`),
   );
 }
+// The iOS bundle omits vendor/ and voices/; refuse to build if the page could reach them on iOS.
+async function assertIosNeedsNoBrowserModels(indexPath) {
+  const html = await readFile(indexPath, "utf8");
+  const shadow = html.slice(html.indexOf("async function startShadowing()"), html.indexOf("async function startShadowing()") + 8000);
+  const conversation = html.slice(html.indexOf("async function transcribeBrowserAudio("), html.indexOf("async function transcribeBrowserAudio(") + 2000);
+  const guarded = [shadow, conversation].every(body => body.indexOf("nativeTranscription === true") !== -1
+    && body.indexOf("nativeTranscription === true") < body.indexOf("transcribeWithWebAssembly("));
+  if (!guarded) throw new Error("IOS_BROWSER_WHISPER_REACHABLE");
+  // Every browser-model entry point must be one of the reviewed, iOS-guarded call sites.
+  const calls = name => html.split(name).length - 1;
+  if (calls("transcribeWithWebAssembly(") !== 3 || calls("initKokoroTTS(") !== 2) {
+    throw new Error("IOS_BROWSER_MODEL_CALL_SITES_CHANGED");
+  }
+  if (!/voiceNativeBridge\?\.platform === "ios"\) return true/.test(html.slice(html.indexOf("function isIosBrowserEnvironment()"), html.indexOf("function isIosBrowserEnvironment()") + 600))) {
+    throw new Error("IOS_BROWSER_KOKORO_REACHABLE");
+  }
+  if (!/isIosBrowser && normalized === TTS_MODES\.KOKORO \? TTS_MODES\.SYSTEM/.test(await readFile(path.join(webRoot, "runtime/tts-preference.js"), "utf8"))) {
+    throw new Error("IOS_BROWSER_KOKORO_REACHABLE");
+  }
+}
 
 const iosDir = path.join(root, "apps", "ios");
 let iosExists = false;
@@ -89,10 +109,14 @@ if (iosExists) {
   await copyFile(path.join(webRoot, "offline.html"), path.join(iosWebDir, "offline.html"));
   await copyFile(path.join(webRoot, "manifest.webmanifest"), path.join(iosWebDir, "manifest.webmanifest"));
   await cp(path.join(webRoot, "runtime"), path.join(iosWebDir, "runtime"), { recursive: true });
-  await cp(path.join(webRoot, "vendor"), path.join(iosWebDir, "vendor"), { recursive: true });
   await cp(path.join(webRoot, "icons"), path.join(iosWebDir, "icons"), { recursive: true });
-  await cp(path.join(webRoot, "voices"), path.join(iosWebDir, "voices"), { recursive: true });
+  // iOS speaks and listens through the native bridge (AVSpeechSynthesizer, on-device
+  // SFSpeechRecognizer); browser Kokoro is disabled on iOS and Whisper is never reached, so
+  // the browser model runtimes (vendor/: ONNX Runtime wasm, transformers, kokoro; voices/)
+  // are not bundled (~42 MB).
+  await assertIosNeedsNoBrowserModels(path.join(webRoot, "index.html"));
   console.log("Bundled web assets into iOS app bundle (apps/ios/VoicePractice/Resources/web).");
 }
+
 
 console.log("Built same-origin browser runtimes, PWA icons, and Kokoro voices.");

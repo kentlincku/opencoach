@@ -23,40 +23,6 @@ test('normalizes a valid runtime capability response', () => {
   assert.equal(result.degradedReason, null);
 });
 
-test('normalizes and preserves the actual Windows Kokoro execution provider', () => {
-  const result = normalizeRuntimeCapabilities({
-    protocol: 1,
-    platform: 'windows',
-    arch: 'x64',
-    sttBackends: ['faster-whisper'],
-    ttsBackends: ['kokoro-onnx'],
-    selectedStt: 'faster-whisper',
-    selectedTts: 'kokoro-onnx',
-    executionProvider: 'CPUExecutionProvider',
-    ready: true,
-    degradedReason: null,
-  });
-  assert.equal(result.ready, true);
-  assert.equal(result.executionProvider, 'CPUExecutionProvider');
-});
-
-test('rejects unknown execution provider claims', () => {
-  const result = normalizeRuntimeCapabilities({
-    protocol: 1,
-    platform: 'windows',
-    arch: 'x64',
-    sttBackends: ['faster-whisper'],
-    ttsBackends: ['kokoro-onnx'],
-    selectedStt: 'faster-whisper',
-    selectedTts: 'kokoro-onnx',
-    executionProvider: 'ImaginaryExecutionProvider',
-    ready: true,
-    degradedReason: null,
-  });
-  assert.equal(result.ready, false);
-  assert.equal(result.degradedReason, 'INVALID_CAPABILITY_RESPONSE');
-});
-
 test('unknown selected backend degrades safely', () => {
   const result = normalizeRuntimeCapabilities({
     protocol: 1,

@@ -1,0 +1,22 @@
+# Local development speech stack for Apple Silicon (Python 3.11).
+# Pinned to the versions verified working end-to-end on macOS arm64.
+# Packaged/engineering builds use spikes/packaged-runtime/requirements-darwin-arm64-cp311.lock.json instead.
+numpy==2.4.6
+soundfile==0.14.0
+mlx==0.32.2
+mlx-whisper==0.4.3
+kokoro==0.9.4
+misaki[en]==0.9.4
+torch==2.13.0
+# spaCy English model used by misaki G2P (official GitHub release wheel, MIT).
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# Transitive pins (prevent the resolver backtracking kokoro onto ancient transformers/tokenizers sdists).
+transformers==5.16.1
+tokenizers==0.23.1
+huggingface-hub==1.29.0
+spacy==3.8.16
+numba==0.67.0
+scipy==1.17.1
+tiktoken==0.14.0
+safetensors==0.8.0
+loguru==0.7.3

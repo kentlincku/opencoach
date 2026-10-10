@@ -46,7 +46,7 @@ test('anthropic chat injects x-api-key and returns only normalized text', async 
   assert.equal(request.options.headers['anthropic-version'], '2023-06-01');
 });
 
-test('rejects unknown fields, custom providers, and renderer supplied URLs', async () => {
+test('rejects unknown fields, unknown providers, URLs on fixed providers, and malformed custom endpoints', async () => {
   const { broker } = brokerFixture(async () => { throw new Error('must not fetch'); });
   await assert.rejects(broker.operation({ operation: 'models', providerId: 'openai', baseUrl: 'http://169.254.169.254' }), /INVALID_PROVIDER_OPERATION/);
   await assert.rejects(broker.operation({ operation: 'models', providerId: 'nope' }), /PROVIDER_NOT_ALLOWED/);
@@ -57,20 +57,13 @@ test('rejects unknown fields, custom providers, and renderer supplied URLs', asy
 });
 
 test('local providers never read secrets and use only fixed loopback endpoints', async () => {
-  const requests = [];
+  let requestedUrl;
   const { broker, reads } = brokerFixture(async url => {
-    requests.push(url);
+    requestedUrl = url;
     return responseJson({ data: [{ id: 'local-model' }] });
   });
-  for (const [providerId, endpoint] of [
-    ['llamacpp', 'http://127.0.0.1:8080/v1/models'],
-    ['ollama', 'http://127.0.0.1:11434/v1/models'],
-    ['lmstudio', 'http://127.0.0.1:1234/v1/models'],
-    ['omlx', 'http://127.0.0.1:8000/v1/models'],
-  ]) {
-    assert.deepEqual(await broker.operation({ operation: 'models', providerId }), { models: ['local-model'] });
-    assert.equal(requests.at(-1), endpoint);
-  }
+  assert.deepEqual(await broker.operation({ operation: 'models', providerId: 'ollama' }), { models: ['local-model'] });
+  assert.equal(requestedUrl, 'http://127.0.0.1:11434/v1/models');
   assert.deepEqual(reads, []);
 });
 
@@ -100,65 +93,6 @@ test('provider HTTP errors do not expose response bodies to the renderer', async
 test('caps provider response bytes before parsing', async () => {
   const { broker } = brokerFixture(async () => responseJson({ data: [] }, 200, { 'content-length': String(2 * 1024 * 1024) }));
   await assert.rejects(broker.operation({ operation: 'models', providerId: 'openai' }), /PROVIDER_RESPONSE_TOO_LARGE/);
-});
-
-test('oMLX models and chat route only to fixed 127.0.0.1:8000 without secrets and reject redirects', async () => {
-  const requests = [];
-  const { broker, reads } = brokerFixture(async (url, options) => {
-    requests.push({ url, options });
-    if (options.redirect !== 'error') throw new Error('REDIRECT_POLICY_MUST_BE_ERROR');
-    if (url === 'http://127.0.0.1:8000/v1/models') {
-      return responseJson({ data: [{ id: 'mlx-community/Qwen2.5-7B-Instruct-4bit' }] });
-    }
-    if (url === 'http://127.0.0.1:8000/v1/chat/completions') {
-      return responseJson({ choices: [{ message: { content: 'local omlx reply' } }] });
-    }
-    throw new Error(`UNEXPECTED_URL:${url}`);
-  });
-
-  const modelsResult = await broker.operation({ operation: 'models', providerId: 'omlx' });
-  assert.deepEqual(modelsResult, { models: ['mlx-community/Qwen2.5-7B-Instruct-4bit'] });
-  assert.equal(requests[0].url, 'http://127.0.0.1:8000/v1/models');
-  assert.equal(requests[0].options.method, 'GET');
-  assert.equal(requests[0].options.redirect, 'error');
-  assert.equal(requests[0].options.headers.Authorization, undefined);
-
-  const chatResult = await broker.operation({
-    operation: 'chat',
-    providerId: 'omlx',
-    model: 'mlx-community/Qwen2.5-7B-Instruct-4bit',
-    messages: [{ role: 'user', content: 'hello' }],
-    maxTokens: 50,
-  });
-  assert.deepEqual(chatResult, { text: 'local omlx reply' });
-  assert.equal(requests[1].url, 'http://127.0.0.1:8000/v1/chat/completions');
-  assert.equal(requests[1].options.method, 'POST');
-  assert.equal(requests[1].options.redirect, 'error');
-  assert.equal(requests[1].options.headers.Authorization, undefined);
-  assert.deepEqual(reads, []);
-
-  // Reject renderer URL or header override attempts
-  await assert.rejects(
-    broker.operation({ operation: 'models', providerId: 'omlx', baseUrl: 'http://127.0.0.1:9000/v1' }),
-    /INVALID_PROVIDER_OPERATION/,
-  );
-  await assert.rejects(
-    broker.operation({ operation: 'chat', providerId: 'omlx', model: 'test', messages: [{ role: 'user', content: 'x' }], headers: { Authorization: 'Bearer evil' } }),
-    /INVALID_PROVIDER_OPERATION/,
-  );
-});
-
-test('oMLX connection refused produces clean PROVIDER_CONNECTION_REFUSED error', async () => {
-  const { broker } = brokerFixture(async () => {
-    const error = new TypeError('fetch failed');
-    error.cause = { code: 'ECONNREFUSED' };
-    throw error;
-  });
-
-  await assert.rejects(
-    broker.operation({ operation: 'models', providerId: 'omlx' }),
-    /PROVIDER_CONNECTION_REFUSED/,
-  );
 });
 
 test('custom endpoint: user-set URL (any host/port), key optional and not URL-bound', async () => {

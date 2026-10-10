@@ -1,0 +1,547 @@
+--- a/misaki/en.py
++++ b/misaki/en.py
+@@ -1,13 +1,9 @@
+-from . import data
+ from .token import MToken
+ from dataclasses import dataclass, replace
+-from num2words import num2words
+ from typing import List, Optional, Tuple, Union
+-import importlib.resources
++from pathlib import Path
+ import json
+-import numpy as np
+ import re
+-import spacy
+ import unicodedata
+ 
+ def merge_tokens(tokens: List[MToken], unk: Optional[str] = None) -> MToken:
+@@ -135,39 +131,74 @@
+                 e[k.lower()] = v
+         return {**e, **d}
+ 
+-    def __init__(self, british):
+-        self.british = british
++    def __init__(self, british, *, number_formatter, lexicon_paths, spell_ascii, spell_ascii_source=None):
++        if british is not False or not callable(spell_ascii):
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
++        if not all(callable(getattr(number_formatter, n, None))
++                   for n in ('cardinal', 'ordinal', 'year', 'decimal', 'digits')):
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
++        self.british = False
+         self.cap_stresses = (0.5, 2)
+-        self.golds = {}
+-        self.silvers = {}
+-        with importlib.resources.open_text(data, f"{'gb' if british else 'us'}_gold.json") as r:
+-            self.golds = Lexicon.grow_dictionary(json.load(r))
+-        with importlib.resources.open_text(data, f"{'gb' if british else 'us'}_silver.json") as r:
+-            self.silvers = Lexicon.grow_dictionary(json.load(r))
+-        assert all(isinstance(v, str) or isinstance(v, dict) for v in self.golds.values())
+-        vocab = GB_VOCAB if british else US_VOCAB
+-        for vs in self.golds.values():
+-            if isinstance(vs, str):
+-                assert all(c in vocab for c in vs), vs
+-            else:
+-                assert 'DEFAULT' in vs, vs
+-                for v in vs.values():
+-                    assert v is None or all(c in vocab for c in v), v
++        self.number_formatter = number_formatter
++        self.spell_ascii = spell_ascii
++        if spell_ascii_source is not None and not callable(spell_ascii_source):
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
++        self.spell_ascii_source = spell_ascii_source
++        if not isinstance(lexicon_paths, tuple) or len(lexicon_paths) != 2:
++            raise ValueError('ENGLISH_RESOURCE_INVALID')
++        def unique(pairs):
++            result = {}
++            for key, value in pairs:
++                if key in result:
++                    raise ValueError('ENGLISH_RESOURCE_INVALID')
++                result[key] = value
++            return result
++        dictionaries = []
++        for value in lexicon_paths:
++            path = Path(value)
++            if not path.is_absolute() or any(p.is_symlink() for p in (path, *path.parents)) or not path.is_file():
++                raise ValueError('ENGLISH_RESOURCE_INVALID')
++            try:
++                with path.open('rb') as source:
++                    raw = source.read(16777217)
++                if len(raw) > 16777216:
++                    raise ValueError()
++                data = json.loads(raw.decode('utf-8'), object_pairs_hook=unique)
++                if not isinstance(data, dict):
++                    raise ValueError()
++                for key, entry in data.items():
++                    if not isinstance(key, str) or not key:
++                        raise ValueError()
++                    values = [entry] if isinstance(entry, str) else list(entry.values()) if isinstance(entry, dict) else []
++                    if not values or (isinstance(entry, dict) and not isinstance(entry.get('DEFAULT'), str)):
++                        raise ValueError()
++                    for ps in values:
++                        if ps is not None and (not isinstance(ps, str) or not ps or any(c not in US_VOCAB for c in ps)):
++                            raise ValueError()
++                dictionaries.append(Lexicon.grow_dictionary(data))
++            except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
++                raise ValueError('ENGLISH_RESOURCE_INVALID') from None
++        self.golds, self.silvers = dictionaries
+ 
+     def get_NNP(self, word):
+-        ps = [self.golds.get(c.upper()) for c in word if c.isalpha()]
+-        if None in ps:
+-            return None, None
+-        ps = apply_stress(''.join(ps), 0)
+-        ps = ps.rsplit(SECONDARY_STRESS, 1)
+-        return PRIMARY_STRESS.join(ps), 3
++        source = word
++        if re.fullmatch(r'(?:[A-Za-z]\.){2,}', word):
++            word = word.replace('.', '')
++        if not re.fullmatch(r'[A-Za-z]+', word):
++            raise ValueError('UNSUPPORTED_ENGLISH_TOKEN')
++        if len(word) > 64:
++            raise ValueError('ENGLISH_SPELLING_LIMIT')
++        ps = self.spell_ascii(word) if self.spell_ascii_source is None else self.spell_ascii_source(word, source)
++        if not isinstance(ps, str) or not ps.strip():
++            raise ValueError('ENGLISH_RESOURCE_INVALID')
++        return apply_stress(ps, 0), 3
+ 
+     def get_special_case(self, word, tag, stress, ctx):
+         if tag == 'ADD' and word in ADD_SYMBOLS:
+             return self.lookup(ADD_SYMBOLS[word], None, -0.5, ctx)
+         elif word in SYMBOLS:
+             return self.lookup(SYMBOLS[word], None, None, ctx)
+-        elif '.' in word.strip('.') and word.replace('.', '').isalpha() and len(max(word.split('.'), key=len)) < 3:
++        elif '.' in word.strip('.') and word not in self.golds and word not in self.silvers and word.replace('.', '').isalpha() and len(max(word.split('.'), key=len)) < 3:
+             return self.get_NNP(word)
+         elif word in ('a', 'A'):
+             return 'ɐ' if tag == 'DT' else 'ˈA', 4
+@@ -226,12 +257,13 @@
+         return word[1:] == word[1:].upper()# and len(word) < 8
+ 
+     def lookup(self, word, tag, stress, ctx):
++        source = word
+         is_NNP = None
+-        if word == word.upper() and word not in self.golds:
++        if word == word.upper() and word not in self.golds and word not in self.silvers:
+             word = word.lower()
+             is_NNP = tag == 'NNP' #Lexicon.get_parent_tag(tag) == 'NOUN'
+         ps, rating = self.golds.get(word), 4
+-        if ps is None and not is_NNP:
++        if ps is None:
+             ps, rating = self.silvers.get(word), 3
+         if isinstance(ps, dict):
+             if ctx and ctx.future_vowel is None and 'None' in ps:
+@@ -239,8 +271,8 @@
+             elif tag not in ps:
+                 tag = Lexicon.get_parent_tag(tag)
+             ps = ps.get(tag, ps['DEFAULT'])
+-        if ps is None or (is_NNP and PRIMARY_STRESS not in ps):
+-            ps, rating = self.get_NNP(word)
++        if ps is None:
++            ps, rating = self.get_NNP(word if self.spell_ascii_source is None else source)
+             if ps is not None:
+                 return ps, rating
+         return apply_stress(ps, stress), rating
+@@ -367,86 +399,100 @@
+         cents = word.split('.')[1]
+         return len(cents) < 3 or set(cents) == {0}
+ 
++    @staticmethod
++    def validate_number(word, currency, is_head, num_flags):
++        # Bounded lexical orchestration, not a permissive third-party formatter.
++        if not isinstance(word, str) or num_flags != '' or currency not in (None, *CURRENCIES):
++            raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++        match = re.fullmatch(r'(-?)([0-9]+(?:\.[0-9]+)*|\.[0-9]+)(st|nd|rd|th)?', word)
++        if not match:
++            raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++        sign, magnitude, suffix = match.groups()
++        parts = magnitude.split('.')
++        integer_limit = 15 if is_head or currency or suffix else 18
++        if len(parts[0]) > integer_limit or any(len(p) > 18 for p in parts[1:]):
++            raise ValueError('ENGLISH_NUMBER_LIMIT')
++        if currency and (len(parts) > 2 or (len(parts) == 2 and len(parts[1]) > 2)):
++            raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++        if suffix:
++            if sign or currency or not is_digit(magnitude):
++                raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++            value = int(magnitude)
++            expected = 'th' if 10 <= value % 100 <= 20 else {1:'st',2:'nd',3:'rd'}.get(value % 10, 'th')
++            if suffix != expected:
++                raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++        return sign, magnitude, suffix, parts
++
+     def get_number(self, word, currency, is_head, num_flags):
+-        suffix = re.search(r"[a-z']+$", word)
+-        suffix = suffix.group() if suffix else None
+-        word = word[:-len(suffix)] if suffix else word
++        sign, magnitude, suffix, parts = self.validate_number(word, currency, is_head, num_flags)
+         result = []
+-        if word.startswith('-'):
+-            result.append(self.lookup('minus', None, None, None))
+-            word = word[1:]
+-        def extend_num(num, first=True, escape=False):
+-            splits = re.split(r'[^a-z]+', num if escape else num2words(int(num)))
+-            for i, w in enumerate(splits):
+-                if w != 'and' or '&' in num_flags:
+-                    if first and i == 0 and len(splits) > 1 and w == 'one' and 'a' in num_flags:
+-                        result.append(('ə', 4))
+-                    else:
+-                        result.append(self.lookup(w, None, -2 if w == 'point' else None, None))
+-                elif w == 'and' and 'n' in num_flags and result:
+-                    result[-1] = (result[-1][0] + 'ən', result[-1][1])
+-        if is_digit(word) and suffix in ORDINALS:
+-            extend_num(num2words(int(word), to='ordinal'), escape=True)
+-        elif not result and len(word) == 4 and currency not in CURRENCIES and is_digit(word):
+-            extend_num(num2words(int(word), to='year'), escape=True)
+-        elif not is_head and '.' not in word:
+-            num = word.replace(',', '')
+-            if num[0] == '0' or len(num) > 3:
+-                [extend_num(n, first=False) for n in num]
+-            elif len(num) == 3 and not num.endswith('00'):
+-                extend_num(num[0])
+-                if num[1] == '0':
+-                    result.append(self.lookup('O', None, -2, None))
+-                    extend_num(num[2], first=False)
++        def lookup_word(word):
++            # Required numeric vocabulary cannot silently invoke spelling.
++            entry = self.golds.get(word, self.silvers.get(word))
++            if isinstance(entry, dict):
++                entry = entry.get('DEFAULT')
++            if not isinstance(entry, str) or not entry:
++                raise ValueError('ENGLISH_RESOURCE_INVALID')
++            ps, rating = self.lookup(word, None, -2 if word in ('point', 'oh') else None, None)
++            if not isinstance(ps, str) or not ps.strip():
++                raise ValueError('ENGLISH_RESOURCE_INVALID')
++            result.append((ps, rating))
++        def extend(words):
++            if not isinstance(words, str) or not re.fullmatch(r'[a-z]+(?: [a-z]+)*', words):
++                raise ValueError('ENGLISH_FORMATTER_INVALID')
++            for w in words.split(' '):
++                lookup_word(w)
++        f = self.number_formatter
++        if sign:
++            lookup_word('minus')
++        if suffix:
++            extend(f.ordinal(magnitude))
++        elif not sign and not currency and len(magnitude) == 4 and is_digit(magnitude):
++            extend(f.year(magnitude))
++        elif not is_head and '.' not in magnitude:
++            if magnitude[0] == '0' or len(magnitude) > 3:
++                extend(f.digits(magnitude))
++            elif len(magnitude) == 3 and not magnitude.endswith('00'):
++                extend(f.cardinal(magnitude[0]))
++                if magnitude[1] == '0':
++                    lookup_word('oh')
++                    extend(f.cardinal(magnitude[2]))
+                 else:
+-                    extend_num(num[1:], first=False)
++                    extend(f.cardinal(magnitude[1:]))
+             else:
+-                extend_num(num)
+-        elif word.count('.') > 1 or not is_head:
+-            first = True
+-            for num in word.replace(',', '').split('.'):
+-                if not num:
+-                    pass
+-                elif num[0] == '0' or (len(num) != 2 and any(n != '0' for n in num[1:])):
+-                    [extend_num(n, first=False) for n in num]
++                extend(f.cardinal(magnitude))
++        elif len(parts) > 2 or not is_head:
++            for part in parts:
++                if not part:
++                    continue
++                if part[0] == '0' or (len(part) != 2 and any(c != '0' for c in part[1:])):
++                    extend(f.digits(part))
+                 else:
+-                    extend_num(num, first=first)
+-                first = False
+-        elif currency in CURRENCIES and Lexicon.is_currency(word):
+-            pairs = [(int(num) if num else 0, unit) for num, unit in zip(word.replace(',', '').split('.'), CURRENCIES[currency])]
+-            if len(pairs) > 1:
+-                if pairs[1][0] == 0:
+-                    pairs = pairs[:1]
+-                elif pairs[0][0] == 0:
+-                    pairs = pairs[1:]
+-            for i, (num, unit) in enumerate(pairs):
+-                if i > 0:
+-                    result.append(self.lookup('and', None, None, None))
+-                extend_num(num, first=i==0)
+-                result.append(self.stem_s(unit+'s', None, None, None) if abs(num) != 1 and unit != 'pence' else self.lookup(unit, None, None, None))
++                    extend(f.cardinal(part))
++        elif currency:
++            major = parts[0] or '0'
++            minor = parts[1].ljust(2, '0') if len(parts) == 2 else '00'
++            pairs = [(major, CURRENCIES[currency][0])]
++            if int(minor):
++                if not int(major):
++                    pairs.clear()
++                pairs.append((minor, CURRENCIES[currency][1]))
++            for i, (digits, unit) in enumerate(pairs):
++                if i:
++                    lookup_word('and')
++                extend(f.cardinal(digits))
++                if unit == 'pence':
++                    unit = 'penny' if int(digits) == 1 else 'pence'
++                elif int(digits) != 1:
++                    unit += 's'
++                lookup_word(unit)
++        elif is_digit(magnitude):
++            extend(f.cardinal(magnitude))
+         else:
+-            if is_digit(word):
+-                word = num2words(int(word), to='cardinal')
+-            elif '.' not in word:
+-                word = num2words(int(word.replace(',', '')), to='ordinal' if suffix in ORDINALS else 'cardinal')
+-            else:
+-                word = word.replace(',', '')
+-                if word[0] == '.':
+-                    word = 'point ' + ' '.join(num2words(int(n)) for n in word[1:])
+-                else:
+-                    word = num2words(float(word))
+-            extend_num(word, escape=True)
++            extend(f.decimal(magnitude))
+         if not result:
+-            print('❌', 'TODO:NUM', word, currency)
+-            return None, None
+-        result, rating = ' '.join(p for p, _ in result), min(r for _, r in result)
+-        if suffix in ('s', "'s"):
+-            return self._s(result), rating
+-        elif suffix in ('ed', "'d"):
+-            return self._ed(result), rating
+-        elif suffix == 'ing':
+-            return self._ing(result), rating
+-        return result, rating
++            raise ValueError('ENGLISH_FORMATTER_INVALID')
++        return ' '.join(ps for ps, _ in result), min(r for _, r in result)
+ 
+     def append_currency(self, ps, currency):
+         if not currency:
+@@ -493,16 +539,20 @@
+         return None, None
+ 
+ class G2P:
+-    def __init__(self, version=None, trf=False, british=False, fallback=None, unk='❓'):
++    def __init__(self, *, nlp, number_formatter, lexicon_paths, spell_ascii,
++                 render_identifier, spell_ascii_source=None, version='1.0', british=False, fallback=None, unk='❓'):
++        if british is not False or fallback is not None or version != '1.0':
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
++        if not callable(nlp) or not {'tok2vec', 'tagger'}.issubset(nlp.pipe_names) or not callable(render_identifier):
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
+         self.version = version
+-        self.british = british
+-        name = f"en_core_web_{'trf' if trf else 'sm'}"
+-        if not spacy.util.is_package(name):
+-            spacy.cli.download(name)
+-        components = ['transformer' if trf else 'tok2vec', 'tagger']
+-        self.nlp = spacy.load(name, enable=components)
+-        self.lexicon = Lexicon(british)
+-        self.fallback = fallback if fallback else None
++        self.british = False
++        self.nlp = nlp
++        self.lexicon = Lexicon(False, number_formatter=number_formatter,
++                               lexicon_paths=lexicon_paths, spell_ascii=spell_ascii,
++                               spell_ascii_source=spell_ascii_source)
++        self.render_identifier = render_identifier
++        self.fallback = None
+         self.unk = unk
+ 
+     @staticmethod
+@@ -538,32 +588,113 @@
+             tokens.extend(text[last_end:].split())
+         return result, tokens, features
+ 
+-    def tokenize(self, text: str, tokens, features) -> List[MToken]:
+-        doc = self.nlp(text)
+-        # print(doc._.trf_data.all_outputs[0].data.shape, doc._.trf_data.all_outputs[0].lengths)
+-        mutable_tokens = [MToken(
+-            text=tk.text, tag=tk.tag_, whitespace=tk.whitespace_,
+-            _=MToken.Underscore(is_head=True, num_flags='', prespace=False)
+-        ) for tk in doc]
+-        if not features:
+-            return mutable_tokens
+-        align = spacy.training.Alignment.from_strings(tokens, [tk.text for tk in mutable_tokens])
+-        for k, v in features.items():
+-            assert isinstance(v, str) or isinstance(v, int) or v in (0.5, -0.5), (k, v)
+-            for i, j in enumerate(np.where(align.y2x.data == k)[0]):
+-                if j >= len(mutable_tokens):
+-                    continue
+-                if not isinstance(v, str):
+-                    mutable_tokens[j]._.stress = v
+-                elif v.startswith('/'):
+-                    mutable_tokens[j]._.is_head = i == 0
+-                    mutable_tokens[j].phonemes = v.lstrip('/') if i == 0 else ''
+-                    mutable_tokens[j]._.rating = 5
+-                # elif v.startswith('['):
+-                #     mutable_tokens[j]._.alias = v.lstrip('[') if i == 0 else ''
+-                elif v.startswith('#'):
+-                    mutable_tokens[j]._.num_flags = v.lstrip('#')
+-        return mutable_tokens
++    @staticmethod
++    def validate_spans(text, number_spans, identifier_spans):
++        if not isinstance(text, str) or len(text) > 5000 or not isinstance(number_spans, tuple) or not isinstance(identifier_spans, tuple):
++            raise ValueError('ENGLISH_SPAN_INVALID')
++        spans = []
++        intervals = []
++        for items, size in ((number_spans, 5), (identifier_spans, 3)):
++            for item in items:
++                if not isinstance(item, tuple) or len(item) != size or type(item[0]) is not int or type(item[1]) is not int:
++                    raise ValueError('ENGLISH_SPAN_INVALID')
++                intervals.append(item[:2])
++        intervals.sort()
++        if any(a[1] > b[0] for a, b in zip(intervals, intervals[1:])):
++            raise ValueError('ENGLISH_SPAN_INVALID')
++        letters = 0
++        for kind, items, size in (('number', number_spans, 5), ('identifier', identifier_spans, 3)):
++            for item in items:
++                if not isinstance(item, tuple) or len(item) != size:
++                    raise ValueError('ENGLISH_SPAN_INVALID')
++                start, end, lexeme = item[:3]
++                if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text) or not isinstance(lexeme, str):
++                    raise ValueError('ENGLISH_SPAN_INVALID')
++                if (start and (text[start-1].isalnum() or text[start-1] in '.+-−$£€')) or (end < len(text) and text[end].isalnum()):
++                    raise ValueError('ENGLISH_SPAN_INVALID')
++                if kind == 'number':
++                    currency, positive = item[3:]
++                    if currency not in (None, *CURRENCIES) or type(positive) is not bool:
++                        raise ValueError('ENGLISH_SPAN_INVALID')
++                    sign = '-' if lexeme.startswith('-') else '+' if positive else ''
++                    if positive and lexeme.startswith('-'):
++                        raise ValueError('ENGLISH_SPAN_INVALID')
++                    rebuilt = sign + (currency or '') + (lexeme[1:] if sign == '-' else lexeme)
++                    if rebuilt != text[start:end]:
++                        raise ValueError('ENGLISH_SPAN_INVALID')
++                    Lexicon.validate_number(lexeme, currency, True, '')
++                    if lexeme.count('.') > 1:
++                        raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++                else:
++                    if lexeme != text[start:end]:
++                        raise ValueError('ENGLISH_SPAN_INVALID')
++                    # Reserved numeric syntax never escapes as an identifier.
++                    if re.match(r'^[0-9]+(?:st|nd|rd|th)', lexeme) or re.match(r'^[0-9]+[eE](?:[0-9]*|[+-][0-9]*)$', lexeme):
++                        raise ValueError('UNSUPPORTED_ENGLISH_NUMBER')
++                    if not re.fullmatch(r'[A-Za-z0-9]+', lexeme) or not re.search('[A-Za-z]', lexeme) or not re.search('[0-9]', lexeme):
++                        raise ValueError('UNSUPPORTED_ENGLISH_TOKEN')
++                    if len(lexeme) > 64:
++                        raise ValueError('ENGLISH_SPELLING_LIMIT')
++                    if any(len(run) > 18 for run in re.findall('[0-9]+', lexeme)):
++                        raise ValueError('ENGLISH_NUMBER_LIMIT')
++                    letters += len(re.findall('[A-Za-z]', lexeme))
++                spans.append((start, end, kind, item))
++        spans.sort(key=lambda span: span[0])
++        if any(left[1] > right[0] for left, right in zip(spans, spans[1:])):
++            raise ValueError('ENGLISH_SPAN_INVALID')
++        if letters > 256:
++            raise ValueError('ENGLISH_SPELLING_LIMIT')
++        return spans
++
++    def tokenize(self, text: str, tokens, features, *, number_spans=(), identifier_spans=()) -> List[MToken]:
++        spans = self.validate_spans(text, number_spans, identifier_spans)
++        if features:
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
++        doc = list(self.nlp(text))
++        previous = 0
++        for tk in doc:
++            if type(tk.idx) is not int or tk.idx < previous or text[tk.idx:tk.idx+len(tk.text)] != tk.text:
++                raise ValueError('ENGLISH_SPAN_INVALID')
++            if text[previous:tk.idx].strip() or text[tk.idx+len(tk.text):tk.idx+len(tk.text)+len(tk.whitespace_)] != tk.whitespace_:
++                raise ValueError('ENGLISH_SPAN_INVALID')
++            previous = tk.idx + len(tk.text) + len(tk.whitespace_)
++        if text[previous:].strip():
++            raise ValueError('ENGLISH_SPAN_INVALID')
++        mutable = []
++        i = 0
++        for start, end, kind, item in spans:
++            while i < len(doc) and doc[i].idx < start:
++                tk = doc[i]
++                if tk.idx + len(tk.text) > start:
++                    raise ValueError('ENGLISH_SPAN_INVALID')
++                mutable.append(MToken(text=tk.text, tag=tk.tag_, whitespace=tk.whitespace_,
++                               _=MToken.Underscore(is_head=True, num_flags='', prespace=False)))
++                i += 1
++            if i >= len(doc) or doc[i].idx != start:
++                raise ValueError('ENGLISH_SPAN_INVALID')
++            j = i
++            while j < len(doc) and doc[j].idx + len(doc[j].text) < end:
++                j += 1
++            if j >= len(doc) or doc[j].idx + len(doc[j].text) != end:
++                raise ValueError('ENGLISH_SPAN_INVALID')
++            attrs = MToken.Underscore(is_head=True, num_flags='', prespace=False)
++            if kind == 'number':
++                attrs.number_lexeme = item[2]
++                attrs.currency = item[3]
++                if item[4]:
++                    plus = MToken.Underscore(is_head=True, num_flags='', prespace=False)
++                    plus.number_plus = True
++                    mutable.append(MToken(text='+', tag='SYM', whitespace=' ', _=plus))
++                    start += 1
++            else:
++                attrs.identifier_lexeme = item[2]
++            mutable.append(MToken(text=text[start:end], tag='CD' if kind == 'number' else 'NN',
++                                  whitespace=doc[j].whitespace_, _=attrs))
++            i = j + 1
++        for tk in doc[i:]:
++            mutable.append(MToken(text=tk.text, tag=tk.tag_, whitespace=tk.whitespace_,
++                           _=MToken.Underscore(is_head=True, num_flags='', prespace=False)))
++        return mutable
+ 
+     def fold_left(self, tokens: List[MToken]) -> List[MToken]:
+         result = []
+@@ -577,6 +708,10 @@
+         words = []
+         currency = None
+         for i, token in enumerate(tokens):
++            if token._.number_lexeme is not None or token._.identifier_lexeme is not None or token._.number_plus:
++                words.append(token)
++                currency = None
++                continue
+             if token._.alias is None and token.phonemes is None:
+                 tks = [replace(
+                     token, text=t, whitespace='',
+@@ -650,19 +785,30 @@
+         for _, _, i in indices:
+             tokens[i].phonemes = apply_stress(tokens[i].phonemes, -0.5)
+ 
+-    def __call__(self, text: str, preprocess=True) -> Tuple[str, List[MToken]]:
+-        preprocess = G2P.preprocess if preprocess == True else preprocess
+-        text, tokens, features = preprocess(text) if preprocess else (text, [], {})
+-        tokens = self.tokenize(text, tokens, features)
++    def __call__(self, text: str, preprocess=False, *, number_spans=(), identifier_spans=()) -> Tuple[str, List[MToken]]:
++        if preprocess is not False:
++            raise ValueError('ENGLISH_CONFIGURATION_INVALID')
++        tokens = self.tokenize(text, [], {}, number_spans=number_spans, identifier_spans=identifier_spans)
+         tokens = self.fold_left(tokens)
+         tokens = G2P.retokenize(tokens)
+         ctx = TokenContext()
+         for i, w in reversed(list(enumerate(tokens))):
+             if not isinstance(w, list):
++                if w._.number_lexeme is not None:
++                    w.phonemes, w._.rating = self.lexicon.get_number(w._.number_lexeme, w._.currency, True, '')
++                elif w._.identifier_lexeme is not None:
++                    w.phonemes = self.render_identifier(w._.identifier_lexeme)
++                    if not isinstance(w.phonemes, str) or not w.phonemes.strip():
++                        raise ValueError('ENGLISH_RESOURCE_INVALID')
++                    w._.rating = 3
++                elif w._.number_plus:
++                    if 'plus' not in self.lexicon.golds and 'plus' not in self.lexicon.silvers:
++                        raise ValueError('ENGLISH_RESOURCE_INVALID')
++                    w.phonemes, w._.rating = self.lexicon.lookup('plus', None, None, None)
+                 if w.phonemes is None:
+                     w.phonemes, w.rating = self.lexicon(replace(w, _=w._), ctx)
+-                if w.phonemes is None and self.fallback is not None:
+-                    w.phonemes, w.rating = self.fallback(replace(w, _=w._))
++                if w.phonemes is None:
++                    w.phonemes, w._.rating = self.lexicon.get_NNP(w.text)
+                 ctx = G2P.token_context(ctx, w.phonemes, w)
+                 continue
+             left, right = 0, len(w)
+@@ -691,9 +837,8 @@
+                         if all(c in SUBTOKEN_JUNKS for c in tk.text):
+                             tk.phonemes = ''
+                             tk._.rating = 3
+-                        elif self.fallback is not None:
+-                            should_fallback = True
+-                            break
++                        else:
++                            tk.phonemes, tk._.rating = self.lexicon.get_NNP(tk.text)
+                     left = 0
+             if should_fallback:
+                 tk = merge_tokens(w)

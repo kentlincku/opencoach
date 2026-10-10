@@ -1,5 +1,9 @@
 param(
-    [switch]$VerifyAssetsOnly
+    [switch]$VerifyAssetsOnly,
+    [string]$Bundle,
+    [string]$BundleSha256,
+    [string]$Wheelhouse,
+    [string]$Prepared
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,13 +65,29 @@ if ($VerifyAssetsOnly) {
     exit 0
 }
 
+if (-not $Bundle -or $BundleSha256 -notmatch '^[a-f0-9]{64}$' -or -not $Wheelhouse -or -not $Prepared) {
+    throw "Approved bundle input required: rerun setup-windows.ps1 -Bundle <bundle.json> -BundleSha256 <sha256> -Wheelhouse <offline-wheels> -Prepared <new-owned-directory>. Public requirements-windows.txt alone is not a runtime."
+}
+if (-not (Test-Path -LiteralPath $Bundle -PathType Leaf) -or -not (Test-Path -LiteralPath $Wheelhouse -PathType Container)) {
+    throw "Approved bundle or wheelhouse is missing; no downloads started."
+}
+Assert-VerifiedAsset $Bundle $BundleSha256
+if (Test-Path -LiteralPath $Prepared) { throw "Prepared output already exists; choose a new owned directory." }
 Require-Command "uv" "Install it from https://docs.astral.sh/uv/."
 Require-Command "npm" "Install Node.js from https://nodejs.org/."
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    Invoke-Checked { uv venv --python 3.11 .venv } "Python environment creation"
+    # stdlib venv avoids untracked _virtualenv.py/.pth bootstrap code. No Python download.
+    $bootstrapPython = & uv python find --offline 3.11
+    if ($LASTEXITCODE -ne 0) { throw "An installed Windows x64 CPython 3.11 is required." }
+    Invoke-Checked { & $bootstrapPython -I -B -m venv --without-pip .venv } "Python environment creation"
 }
-Invoke-Checked { uv pip install --python ".venv\Scripts\python.exe" -r "native\python\requirements-windows.txt" } "Python dependency installation"
+$python = ".venv\Scripts\python.exe"
+$driver = "spikes\packaged-runtime\build-runtime.py"
+Invoke-Checked { & $python -I -B $driver --prepare-only --bundle $Bundle --bundle-sha256 $BundleSha256 --wheelhouse $Wheelhouse --output $Prepared } "Full code/resource/wheelhouse admission"
+$installLock = Join-Path $Prepared "install.lock.txt"
+Invoke-Checked { uv --no-config pip install --offline --python $python --no-index --no-deps --require-hashes --only-binary :all: --find-links $Wheelhouse -r $installLock } "Hash-locked full vendor dependency installation"
+Invoke-Checked { & $python -I -B $driver --verify-only --bundle $Bundle --bundle-sha256 $BundleSha256 --wheelhouse $Wheelhouse --prepared $Prepared } "Installed full runtime input verification"
 
 # Keep Electron and all dev dependencies reproducible from package-lock.json.
 npm ci --include=dev

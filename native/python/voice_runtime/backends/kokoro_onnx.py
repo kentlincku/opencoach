@@ -11,14 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ..text import clean_text_for_speech
-from .base import (
-    BackendExecutionError,
-    BackendInputError,
-    BackendUnavailableError,
-    TTSBackend,
-    samples_to_wav,
-    validate_tts_input,
-)
+from .base import BackendUnavailableError, TTSBackend, samples_to_wav, validate_tts_input
 
 
 class KokoroOnnxBackend(TTSBackend):
@@ -27,7 +20,6 @@ class KokoroOnnxBackend(TTSBackend):
         *,
         model_path: Path | None = None,
         voices_path: Path | None = None,
-        requested_provider: str | None = None,
         engine_factory: Callable[[str, str], Any] | None = None,
     ) -> None:
         model_value = model_path or (
@@ -40,77 +32,66 @@ class KokoroOnnxBackend(TTSBackend):
         )
         if model_value is None or voices_value is None:
             raise BackendUnavailableError("tts", "kokoro-onnx", "model assets not configured")
-        self.model_path = model_value.resolve()
-        self.voices_path = voices_value.resolve()
+        # Preserve the supplied path's association so the lazy fd gate can reject
+        # symlinks instead of erasing them through resolve().
+        self.model_path = model_value.absolute()
+        self.voices_path = voices_value.absolute()
         if not self.model_path.is_file() or not self.voices_path.is_file():
             raise BackendUnavailableError("tts", "kokoro-onnx", "model assets missing")
-        self.requested_provider = (
-            requested_provider or os.environ.get("VOICE_KOKORO_EXECUTION_PROVIDER", "cpu")
-        ).lower()
         self._engine_factory = engine_factory
         self._engine = None
+        self._cpu_engine = False
+        self._provider_success = False
+        self._provider = 'CPUExecutionProvider'
 
-    @property
-    def execution_provider(self) -> str:
-        engine = self._get_engine()
-        sess = getattr(engine, "sess", None)
-        providers = sess.get_providers() if sess and hasattr(sess, "get_providers") else ["CPUExecutionProvider"]
-        if self.requested_provider in ("directml", "dmlexecutionprovider"):
-            if "DmlExecutionProvider" not in providers:
-                raise BackendUnavailableError("tts", "kokoro-onnx", "DirectML provider unavailable")
-            return "DmlExecutionProvider"
-        if "DmlExecutionProvider" in providers:
-            return "DmlExecutionProvider"
-        return "CPUExecutionProvider"
+    def provider_evidence(self):
+        """Passive, detached historical facts; never initializes or queries a session."""
+        success = self._provider_success
+        provider = self._provider if success else None
+        sessions = {'CPUExecutionProvider': ['CPUExecutionProvider'],
+                    'CUDAExecutionProvider': ['CUDAExecutionProvider', 'CPUExecutionProvider']}
+        return dict(requested=provider,
+                    sessionProviders=list(sessions[provider]) if provider else [],
+                    modelLoaded=success, inferenceSucceeded=success,
+                    executionProvider=provider)
 
     def _get_engine(self):
         if self._engine is None:
             if self._engine_factory is None:
-                try:
-                    from kokoro_onnx import Kokoro
-                except ImportError as error:
-                    raise BackendUnavailableError("tts", "kokoro-onnx", "dependency missing") from error
-
-                def default_factory(model_str: str, voices_str: str):
-                    try:
-                        import onnxruntime as ort
-                        target_providers = (
-                            ["DmlExecutionProvider", "CPUExecutionProvider"]
-                            if self.requested_provider in ("directml", "dmlexecutionprovider")
-                            else ["CPUExecutionProvider"]
-                        )
-                        session = ort.InferenceSession(model_str, providers=target_providers)
-                        k = Kokoro(model_str, voices_str)
-                        k.sess = session
-                        return k
-                    except Exception as err:
-                        raise BackendUnavailableError("tts", "kokoro-onnx", f"engine creation failed: {err}") from err
-
-                self._engine_factory = default_factory
-            self._engine = self._engine_factory(str(self.model_path), str(self.voices_path))
-            # Validate provider boundary
-            _ = self.execution_provider
+                from ..onnx_engine import create_cpu_engine, _CpuEngine
+                self._engine = create_cpu_engine(self.model_path, self.voices_path)
+                self._cpu_engine = type(self._engine) is _CpuEngine
+                if self._cpu_engine:
+                    self._provider = self._engine._provider
+            else:
+                self._engine = self._engine_factory(str(self.model_path), str(self.voices_path))
         return self._engine
 
     def synthesize(self, text: str, voice: str, speed: float) -> dict[str, Any]:
+        from ..english_g2p import speakable
+        from .base import BackendInputError, BackendExecutionError
         cleaned = clean_text_for_speech(text)
         validate_tts_input(cleaned, voice, speed)
-        prov = self.execution_provider
+        # Drop the few spellings the English G2P cannot read instead of failing the reply.
+        cleaned = speakable(cleaned)
         try:
-            samples, sample_rate = self._get_engine().create(
-                cleaned,
-                voice=voice,
-                speed=speed,
-                lang="en-us",
-            )
-        except Exception as error:
-            if isinstance(error, (BackendInputError, BackendUnavailableError)):
-                raise
-            raise BackendExecutionError("tts", "kokoro-onnx") from error
-
-        result = samples_to_wav(samples, int(sample_rate))
-        return {
-            **result,
-            "engine": "kokoro-onnx",
-            "executionProvider": prov,
-        }
+            engine = self._get_engine()
+            samples, sample_rate = engine.create(cleaned, voice=voice, speed=speed, lang='en-us')
+            import math
+            from numbers import Real
+            if not isinstance(sample_rate, Real) or sample_rate != 24000 or getattr(samples, 'ndim', 1) != 1:
+                raise BackendExecutionError('tts', 'kokoro-onnx')
+            values = list(samples)
+            if not values or any(not isinstance(value, Real) or not math.isfinite(value) for value in values):
+                raise BackendExecutionError('tts', 'kokoro-onnx')
+            result = samples_to_wav(values, 24000)
+            self._provider_success = self._cpu_engine
+            return {**result, 'engine': 'kokoro-onnx'}
+        except BackendInputError:
+            raise
+        except BackendUnavailableError:
+            self._provider_success = False
+            raise
+        except Exception:
+            self._provider_success = False
+            raise BackendExecutionError('tts', 'kokoro-onnx') from None

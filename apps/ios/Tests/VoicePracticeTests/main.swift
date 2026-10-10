@@ -200,9 +200,8 @@ Task {
         "providerId": "openai",
         "baseUrl": "http://127.0.0.1:8000/v1"
     ])
-    assertTrue(!cloudMismatchRes.success)
-    assertEqual(cloudMismatchRes.error, "CLOUD_CREDENTIAL_ENDPOINT_MISMATCH")
-    print("  ✓ Bridge rejected cloud credential on LAN endpoint")
+    assertTrue(cloudMismatchRes.error != "CLOUD_CREDENTIAL_ENDPOINT_MISMATCH")
+    print("  ✓ Bridge does not bind provider keys to a fixed host")
 
     // --- Test 10: Schema limits fail closed ---
     let longId = String(repeating: "x", count: 129)

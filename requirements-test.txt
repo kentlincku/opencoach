@@ -1,0 +1,2 @@
+# Python packages the source tests import (npm test). Runtime packaging is locked separately.
+numpy==2.4.6

@@ -78,7 +78,7 @@ Provider network requests are fixed:
 - ChatGPT/Codex: OpenAI authorization hosts and the provider-authorized Codex Responses route.
 - Grok/SuperGrok: xAI authorization hosts and the provider-authorized xAI Responses route.
 
-The adapter uses a Voice Practice user agent and registered scope. It must not impersonate Codex CLI, Grok CLI, Hermes, or another client.
+The adapter uses a Voice Practice user agent and registered scope. It must not impersonate Codex CLI, Grok CLI, or another client.
 
 ## Platform availability
 

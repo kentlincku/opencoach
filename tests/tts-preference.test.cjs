@@ -32,9 +32,8 @@ test('kokoro mode selects model TTS on desktop and browser', () => {
   assert.equal(shouldLoadBrowserKokoro({ mode: 'kokoro', runtimeKind: 'electron' }), false);
 });
 
-test('auto mode prefers native desktop and Android TTS but browser system speech', () => {
+test('auto mode prefers native desktop TTS but browser system speech', () => {
   assert.equal(shouldUseModelTts({ mode: 'auto', runtimeKind: 'electron' }), true);
-  assert.equal(shouldUseModelTts({ mode: 'auto', runtimeKind: 'android' }), true);
   assert.equal(shouldUseModelTts({ mode: 'auto', runtimeKind: 'browser' }), false);
   assert.equal(shouldLoadBrowserKokoro({ mode: 'auto', runtimeKind: 'browser' }), false);
 });

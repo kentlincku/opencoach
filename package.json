@@ -1,8 +1,8 @@
 {
   "name": "voice-practice-unified",
-  "version": "0.2.0-beta.1",
+  "version": "0.3.0-beta.1",
   "private": true,
-  "description": "Local-first cross-platform voice practice with shared web, desktop, iOS, and Android runtimes.",
+  "description": "Local-first cross-platform voice practice with one shared web UI, a macOS desktop runtime, and an iOS app.",
   "author": "kentlin",
   "license": "Apache-2.0",
   "repository": {
@@ -16,14 +16,14 @@
     "start:web": "node scripts/start-local-web.mjs",
     "build:web": "node scripts/build-web.mjs",
     "build:icons": "node scripts/build-icons.mjs",
-    "prepack:mac": "node scripts/check-macos-runtime.mjs",
-    "pack:mac": "npm run build:web && electron-builder --mac dmg zip --arm64 --publish never",
-    "verify:mac:voice": "node scripts/verify-macos-packaged-voice.mjs --app \"dist/mac-arm64/Voice Practice.app\"",
-    "verify:mac:voice:app": "node scripts/macos-packaged-voice-e2e.cjs --app \"dist/mac-arm64/Voice Practice.app\"",
-    "pack:win": "npm run build:web && electron-builder --win nsis portable --x64 --publish never",
+    "pack:mac": "node scripts/build-macos-receipt.cjs",
+    "pack:win": "npm run build:web && electron-builder --win nsis portable --x64",
     "dist:dir": "npm run build:web && electron-builder --dir",
     "pretest": "npm run build:web",
-    "test": "node scripts/run-tests.mjs"
+    "test": "node scripts/run-tests.mjs",
+    "test:mac": "node scripts/run-mac-tests.mjs",
+    "start:mac": "bash scripts/run-local-macos.sh",
+    "test:win": "node scripts/run-win-tests.mjs"
   },
   "devDependencies": {
     "@huggingface/transformers": "3.3.3",
@@ -36,7 +36,8 @@
     "yazl": "^3.3.1"
   },
   "dependencies": {
-    "yauzl": "^3.4.0"
+    "yauzl": "^3.4.0",
+    "pend": "~1.2.0"
   },
   "overrides": {
     "sharp": "0.35.4"

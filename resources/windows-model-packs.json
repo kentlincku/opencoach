@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 1,
+  "modelManifest": {
+    "schemaVersion": 3,
+    "release": "windows-speech-models-1",
+    "models": {
+      "faster-whisper-tiny-en": {
+        "name": "Whisper tiny.en (CTranslate2)",
+        "purpose": "Local English speech recognition on CPU",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+        },
+        "artifacts": {
+          "win32-x64-cpu": {
+            "transport": "raw-files",
+            "bytes": 78090594,
+            "entrypoint": "config.json",
+            "files": [
+              {
+                "path": "config.json",
+                "bytes": 2317,
+                "sha256": "14b1b421a90349bc551b881461426b561a874049cb9e4c4864f2ca384f6a7cc5"
+              },
+              {
+                "path": "model.bin",
+                "bytes": 75537502,
+                "sha256": "1a5afae06a4db91c975c9a9d78be5cc110ee4ea022ad57d55492e4550e936b2a"
+              },
+              {
+                "path": "tokenizer.json",
+                "bytes": 2128466,
+                "sha256": "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df"
+              },
+              {
+                "path": "vocabulary.txt",
+                "bytes": 422309,
+                "sha256": "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"
+              }
+            ],
+            "treeDigest": "567defac05ba249d7ed5117c938fd918f292fbf76b44ce483ce4b28882f5b638",
+            "sources": {
+              "config.json": "https://huggingface.co/Systran/faster-whisper-tiny.en/resolve/0d3d19a32d3338f10357c0889762bd8d64bbdeba/config.json",
+              "model.bin": "https://huggingface.co/Systran/faster-whisper-tiny.en/resolve/0d3d19a32d3338f10357c0889762bd8d64bbdeba/model.bin",
+              "tokenizer.json": "https://huggingface.co/Systran/faster-whisper-tiny.en/resolve/0d3d19a32d3338f10357c0889762bd8d64bbdeba/tokenizer.json",
+              "vocabulary.txt": "https://huggingface.co/Systran/faster-whisper-tiny.en/resolve/0d3d19a32d3338f10357c0889762bd8d64bbdeba/vocabulary.txt"
+            },
+            "provenance": {
+              "sourceRevision": "0d3d19a32d3338f10357c0889762bd8d64bbdeba",
+              "sourceUrl": "https://huggingface.co/Systran/faster-whisper-tiny.en/tree/0d3d19a32d3338f10357c0889762bd8d64bbdeba",
+              "license": {
+                "spdx": "MIT",
+                "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+              }
+            }
+          }
+        }
+      },
+      "faster-whisper-base-en": {
+        "name": "Whisper base.en (CTranslate2)",
+        "purpose": "Local English speech recognition on CPU",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+        },
+        "artifacts": {
+          "win32-x64-cpu": {
+            "transport": "raw-files",
+            "bytes": 147769510,
+            "entrypoint": "config.json",
+            "files": [
+              {
+                "path": "config.json",
+                "bytes": 2227,
+                "sha256": "f3bc3821e9fc76a27bae538e11ae5b677dcdd352b4600429ce7951d398569aeb"
+              },
+              {
+                "path": "model.bin",
+                "bytes": 145216508,
+                "sha256": "2a166925539a16005f14ff328359f9b9adb9dc4fb631bb3b227526862e93e2ef"
+              },
+              {
+                "path": "tokenizer.json",
+                "bytes": 2128466,
+                "sha256": "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df"
+              },
+              {
+                "path": "vocabulary.txt",
+                "bytes": 422309,
+                "sha256": "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"
+              }
+            ],
+            "treeDigest": "86fbfe220a8be852005126461294603d322e0783a4540e0cdcd03b2c3b5d54ac",
+            "sources": {
+              "config.json": "https://huggingface.co/Systran/faster-whisper-base.en/resolve/3d3d5dee26484f91867d81cb899cfcf72b96be6c/config.json",
+              "model.bin": "https://huggingface.co/Systran/faster-whisper-base.en/resolve/3d3d5dee26484f91867d81cb899cfcf72b96be6c/model.bin",
+              "tokenizer.json": "https://huggingface.co/Systran/faster-whisper-base.en/resolve/3d3d5dee26484f91867d81cb899cfcf72b96be6c/tokenizer.json",
+              "vocabulary.txt": "https://huggingface.co/Systran/faster-whisper-base.en/resolve/3d3d5dee26484f91867d81cb899cfcf72b96be6c/vocabulary.txt"
+            },
+            "provenance": {
+              "sourceRevision": "3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+              "sourceUrl": "https://huggingface.co/Systran/faster-whisper-base.en/tree/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+              "license": {
+                "spdx": "MIT",
+                "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+              }
+            }
+          }
+        }
+      },
+      "faster-whisper-small-en": {
+        "name": "Whisper small.en (CTranslate2)",
+        "purpose": "Local English speech recognition on CPU",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://huggingface.co/Systran/faster-whisper-small.en/blob/d1d751a5f8271d482d14ca55d9e2deeebbae577f/README.md"
+        },
+        "artifacts": {
+          "win32-x64-cpu": {
+            "transport": "raw-files",
+            "bytes": 486098798,
+            "entrypoint": "config.json",
+            "files": [
+              {
+                "path": "config.json",
+                "bytes": 2657,
+                "sha256": "666a9605530ac1f61fa8177f3702b4dacec9966749e42610839fcc32661d5fae"
+              },
+              {
+                "path": "model.bin",
+                "bytes": 483545366,
+                "sha256": "62b2a45b05ee59acb4a5341b33ee35e041395d378d418a18acfe4c9e768ee37a"
+              },
+              {
+                "path": "tokenizer.json",
+                "bytes": 2128466,
+                "sha256": "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df"
+              },
+              {
+                "path": "vocabulary.txt",
+                "bytes": 422309,
+                "sha256": "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"
+              }
+            ],
+            "treeDigest": "2fd2a549205b393415e4dd9e3b3525e2ce2dd3b117ae0445b9622b8c5f6cb019",
+            "sources": {
+              "config.json": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/config.json",
+              "model.bin": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/model.bin",
+              "tokenizer.json": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/tokenizer.json",
+              "vocabulary.txt": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/vocabulary.txt"
+            },
+            "provenance": {
+              "sourceRevision": "d1d751a5f8271d482d14ca55d9e2deeebbae577f",
+              "sourceUrl": "https://huggingface.co/Systran/faster-whisper-small.en/tree/d1d751a5f8271d482d14ca55d9e2deeebbae577f",
+              "license": {
+                "spdx": "MIT",
+                "url": "https://huggingface.co/Systran/faster-whisper-small.en/blob/d1d751a5f8271d482d14ca55d9e2deeebbae577f/README.md"
+              }
+            }
+          }
+        }
+      },
+      "faster-whisper-large-v3-turbo": {
+        "name": "Whisper large-v3-turbo (CTranslate2)",
+        "purpose": "Local English speech recognition on CPU",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+        },
+        "artifacts": {
+          "win32-x64-cpu": {
+            "transport": "raw-files",
+            "bytes": 1621665983,
+            "entrypoint": "config.json",
+            "files": [
+              {
+                "path": "config.json",
+                "bytes": 2263,
+                "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e"
+              },
+              {
+                "path": "model.bin",
+                "bytes": 1617884929,
+                "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da"
+              },
+              {
+                "path": "preprocessor_config.json",
+                "bytes": 340,
+                "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+              },
+              {
+                "path": "tokenizer.json",
+                "bytes": 2710337,
+                "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"
+              },
+              {
+                "path": "vocabulary.json",
+                "bytes": 1068114,
+                "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+              }
+            ],
+            "treeDigest": "c53d27eddb78bdc2fd19646d6229f77b30c19882e44175666c37cdea899125e1",
+            "sources": {
+              "config.json": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/config.json",
+              "model.bin": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/model.bin",
+              "preprocessor_config.json": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/preprocessor_config.json",
+              "tokenizer.json": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/tokenizer.json",
+              "vocabulary.json": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/vocabulary.json"
+            },
+            "provenance": {
+              "sourceRevision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+              "sourceUrl": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/tree/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+              "license": {
+                "spdx": "MIT",
+                "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+              }
+            }
+          }
+        }
+      },
+      "kokoro-v1-fp16": {
+        "name": "Kokoro v1.0 FP16",
+        "purpose": "Local English speech synthesis with the existing voice set",
+        "license": {
+          "spdx": "Apache-2.0",
+          "url": "https://huggingface.co/hexgrad/Kokoro-82M/blob/f3ff3571791e39611d31c381e3a41a3af07b4987/README.md"
+        },
+        "artifacts": {
+          "win32-x64-cpu": {
+            "transport": "raw-files",
+            "bytes": 191742359,
+            "entrypoint": "kokoro-v1.0.fp16.onnx",
+            "files": [
+              {
+                "path": "kokoro-v1.0.fp16.onnx",
+                "bytes": 163527961,
+                "sha256": "f3a290d384fbb27966d462905c71a46cef9e5fd00516b40df32a0b4afe77ac96"
+              },
+              {
+                "path": "voices-v1.0.bin",
+                "bytes": 28214398,
+                "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"
+              }
+            ],
+            "treeDigest": "da8d848be4d3dfa396e70d0365a89b69c19c1bb969c8ed4a9edd8a851e9bb06f",
+            "sources": {
+              "kokoro-v1.0.fp16.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
+              "voices-v1.0.bin": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin"
+            },
+            "provenance": {
+              "sourceRevision": "b85309f90fd2660ea3309cf0f2581360e4327555",
+              "sourceUrl": "https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.1",
+              "license": {
+                "spdx": "Apache-2.0",
+                "url": "https://huggingface.co/hexgrad/Kokoro-82M/blob/f3ff3571791e39611d31c381e3a41a3af07b4987/README.md"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "capabilities": {
+    "schemaVersion": 1,
+    "platformKey": "win32-x64-cpu",
+    "runtimeProfile": "windows-ct2-kokoro-cpu-v1",
+    "enabledLanguages": [
+      "en"
+    ],
+    "models": [
+      {
+        "id": "faster-whisper-tiny-en",
+        "kind": "stt",
+        "backend": "faster-whisper",
+        "format": "ctranslate2",
+        "languages": [
+          "en"
+        ],
+        "runtimeProfiles": [
+          "win32-x64-cpu"
+        ]
+      },
+      {
+        "id": "faster-whisper-base-en",
+        "kind": "stt",
+        "backend": "faster-whisper",
+        "format": "ctranslate2",
+        "languages": [
+          "en"
+        ],
+        "runtimeProfiles": [
+          "win32-x64-cpu"
+        ]
+      },
+      {
+        "id": "faster-whisper-small-en",
+        "kind": "stt",
+        "backend": "faster-whisper",
+        "format": "ctranslate2",
+        "languages": [
+          "en"
+        ],
+        "runtimeProfiles": [
+          "win32-x64-cpu"
+        ]
+      },
+      {
+        "id": "faster-whisper-large-v3-turbo",
+        "kind": "stt",
+        "backend": "faster-whisper",
+        "format": "ctranslate2",
+        "languages": [
+          "en"
+        ],
+        "runtimeProfiles": [
+          "win32-x64-cpu"
+        ]
+      },
+      {
+        "id": "kokoro-v1-fp16",
+        "kind": "tts",
+        "backend": "kokoro-onnx",
+        "format": "onnx",
+        "languages": [
+          "en"
+        ],
+        "runtimeProfiles": [
+          "win32-x64-cpu"
+        ]
+      }
+    ]
+  },
+  "modelBindings": {
+    "sttRoot": {
+      "modelId": "faster-whisper-small-en",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "2fd2a549205b393415e4dd9e3b3525e2ce2dd3b117ae0445b9622b8c5f6cb019"
+      }
+    },
+    "onnxModel": {
+      "modelId": "kokoro-v1-fp16",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "da8d848be4d3dfa396e70d0365a89b69c19c1bb969c8ed4a9edd8a851e9bb06f"
+      },
+      "path": "kokoro-v1.0.fp16.onnx"
+    },
+    "onnxVoices": {
+      "modelId": "kokoro-v1-fp16",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "da8d848be4d3dfa396e70d0365a89b69c19c1bb969c8ed4a9edd8a851e9bb06f"
+      },
+      "path": "voices-v1.0.bin"
+    }
+  },
+  "sttChoices": [
+    {
+      "modelId": "faster-whisper-tiny-en",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "567defac05ba249d7ed5117c938fd918f292fbf76b44ce483ce4b28882f5b638"
+      }
+    },
+    {
+      "modelId": "faster-whisper-base-en",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "86fbfe220a8be852005126461294603d322e0783a4540e0cdcd03b2c3b5d54ac"
+      }
+    },
+    {
+      "modelId": "faster-whisper-small-en",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "2fd2a549205b393415e4dd9e3b3525e2ce2dd3b117ae0445b9622b8c5f6cb019"
+      }
+    },
+    {
+      "modelId": "faster-whisper-large-v3-turbo",
+      "identity": {
+        "kind": "raw-files",
+        "treeDigest": "c53d27eddb78bdc2fd19646d6229f77b30c19882e44175666c37cdea899125e1"
+      }
+    }
+  ]
+}

@@ -1,42 +1,17 @@
-import { existsSync, readdirSync } from 'node:fs';
+// Public test entry: the same product gates the maintainers run locally.
+// macOS/Linux -> scripts/run-mac-tests.mjs, Windows -> scripts/run-win-tests.mjs.
+// Private acceptance/evidence suites are not part of the public repository.
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const defaultWinPython = existsSync(path.join(root, '.venv-runtime-build/Scripts/python.exe'))
-  ? path.join(root, '.venv-runtime-build/Scripts/python.exe')
-  : 'python';
-const python = process.env.PYTHON || (process.platform === 'win32' ? defaultWinPython : 'python3');
-const pythonPath = process.env.PYTHONPATH
-  ? `${path.join(root, 'native/python')}${path.delimiter}${process.env.PYTHONPATH}`
-  : path.join(root, 'native/python');
-const childEnv = { ...process.env, PYTHON: python, PYTHONPATH: pythonPath };
-const nodeTests = readdirSync(path.join(root, 'tests'))
-  .filter(name => name.endsWith('.test.cjs'))
-  .sort()
-  .map(name => path.join('tests', name));
-const syntaxTargets = [
-  ...readdirSync(path.join(root, 'apps/desktop'))
-    .filter(name => name.endsWith('.cjs'))
-    .sort()
-    .map(name => path.join('apps/desktop', name)),
-  ...readdirSync(path.join(root, 'scripts'))
-    .filter(name => name.endsWith('.mjs'))
-    .sort()
-    .map(name => path.join('scripts', name)),
-];
-
-const steps = [
-  [python, ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py']],
-  [process.execPath, ['--test', ...nodeTests]],
-  ...syntaxTargets.map(target => [process.execPath, ['--check', target]]),
-];
-
-for (const [command, args] of steps) {
-  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: childEnv });
-  if (result.error) {
-    console.error(`Unable to execute ${command}: ${result.error.message}`);
-    process.exit(1);
-  }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+const gate = process.platform === 'win32' ? 'run-win-tests.mjs' : 'run-mac-tests.mjs';
+const python = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+const env = { ...process.env, PYTHON: python };
+delete env.PYTHONPATH; // a stray PYTHONPATH shadows the repo's `tests` package
+const result = spawnSync(process.execPath, [path.join(root, 'scripts', gate)], { cwd: root, stdio: 'inherit', env });
+if (result.error) {
+  console.error(`Unable to run ${gate}: ${result.error.message}`);
+  process.exit(1);
 }
+process.exit(result.status ?? 1);

@@ -1,0 +1,160 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:voice-practice:desktop-voice-operation:v1",
+  "title": "Desktop voice operation v1 — wire values only, not authority",
+  "oneOf": [
+    { "$ref": "#/definitions/observe" },
+    { "$ref": "#/definitions/batch" },
+    { "$ref": "#/definitions/shortState" },
+    { "$ref": "#/definitions/knownState" },
+    { "$ref": "#/definitions/operationFailure" }
+  ],
+  "definitions": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "counter": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "code": { "enum": ["backend-error", "termination-unconfirmed", "cleanup-failed", "admission-closed", "quota-exceeded"] },
+    "message": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[ -~]+$" },
+    "legacyCancel": {
+      "type": "object", "additionalProperties": false, "required": ["requestId"],
+      "properties": { "requestId": { "$ref": "#/definitions/id" } }
+    },
+    "observe": {
+      "type": "object", "additionalProperties": false, "required": ["version", "type", "requestId"],
+      "properties": {
+        "version": { "const": 1 }, "type": { "const": "observe" }, "requestId": { "$ref": "#/definitions/id" }
+      }
+    },
+    "batch": {
+      "type": "object", "additionalProperties": false, "required": ["version", "type", "requestIds"],
+      "properties": {
+        "version": { "const": 1 }, "type": { "enum": ["revoke", "revoked"] },
+        "requestIds": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/definitions/id" } }
+      }
+    },
+    "shortState": {
+      "type": "object", "additionalProperties": false, "required": ["version", "type", "requestId", "knowledge"],
+      "properties": {
+        "version": { "const": 1 }, "type": { "const": "state" }, "requestId": { "$ref": "#/definitions/id" },
+        "knowledge": { "enum": ["unknown", "retired"] }
+      }
+    },
+    "failure": {
+      "type": "object", "additionalProperties": false, "required": ["code", "message"],
+      "properties": { "code": { "$ref": "#/definitions/code" }, "message": { "$ref": "#/definitions/message" } }
+    },
+    "operationFailure": {
+      "$comment": "JS additionally requires completion.requestId/message/binding to equal the envelope; standard draft-07 cannot compare arbitrary sibling values. Not proof of provenance or current fallback authority.",
+      "type": "object", "additionalProperties": false, "required": ["version", "type", "requestId", "code", "message", "binding", "completion"],
+      "properties": {
+        "version": { "const": 1 }, "type": { "const": "failure" }, "requestId": { "$ref": "#/definitions/id" },
+        "code": { "$ref": "#/definitions/code" }, "message": { "$ref": "#/definitions/message" },
+        "binding": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/binding" }] },
+        "completion": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/completion" }] }
+      },
+      "allOf": [{
+        "if": { "properties": { "completion": { "type": "object" } } },
+        "then": { "properties": { "code": { "const": "backend-error" } } }
+      }]
+    },
+    "completion": {
+      "allOf": [
+        { "$ref": "#/definitions/knownState" },
+        { "properties": {
+          "logical": { "const": "settled" }, "revocation": { "const": "live" }, "cleanup": { "const": "released" },
+          "receipt": { "properties": { "status": { "enum": ["not-dispatched", "completed", "confirmed"] } } },
+          "failure": { "type": "object", "properties": { "code": { "const": "backend-error" } } }
+        } }
+      ]
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false, "required": ["clientId", "intentId", "generation"],
+      "properties": {
+        "clientId": { "$ref": "#/definitions/id" }, "intentId": { "$ref": "#/definitions/id" },
+        "generation": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/counter" }] }
+      }
+    },
+    "receipt": {
+      "type": "object", "additionalProperties": false, "required": ["status", "binding"],
+      "properties": {
+        "status": { "enum": ["not-dispatched", "starting", "running", "completed", "stopping", "confirmed", "unconfirmed"] },
+        "binding": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/binding" }] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "not-dispatched" } } },
+          "then": { "properties": { "binding": { "type": "null" } } },
+          "else": { "properties": { "binding": { "$ref": "#/definitions/binding" } } }
+        },
+
+        {
+          "if": { "properties": { "status": { "enum": ["running", "completed"] } } },
+          "then": { "properties": { "binding": { "properties": { "generation": { "$ref": "#/definitions/counter" } } } } }
+        }
+      ]
+    },
+    "knownState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "type", "requestId", "knowledge", "revision", "logical", "revocation", "receipt", "cleanup", "failure"],
+      "properties": {
+        "version": { "const": 1 }, "type": { "const": "state" }, "requestId": { "$ref": "#/definitions/id" },
+        "knowledge": { "const": "known" }, "revision": { "$ref": "#/definitions/counter" },
+        "logical": { "enum": ["accepted", "preparing", "dispatched", "settled"] },
+        "revocation": { "enum": ["live", "revoked"] },
+        "receipt": { "$ref": "#/definitions/receipt" },
+        "cleanup": { "enum": ["pending", "retained", "released"] },
+        "failure": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/failure" }] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "logical": { "const": "accepted" } } },
+          "then": { "properties": { "receipt": { "properties": { "status": { "const": "not-dispatched" } } } } }
+        },
+        {
+          "if": { "properties": { "logical": { "const": "preparing" } } },
+          "then": { "properties": { "receipt": { "properties": { "status": { "enum": ["not-dispatched", "starting", "stopping", "confirmed", "unconfirmed"] } } } } }
+        },
+        {
+          "if": { "properties": { "logical": { "const": "dispatched" } } },
+          "then": { "properties": { "receipt": { "properties": {
+            "status": { "enum": ["running", "stopping", "confirmed", "unconfirmed"] },
+            "binding": { "properties": { "generation": { "$ref": "#/definitions/counter" } } }
+          } } } }
+        },
+        {
+          "if": { "properties": { "logical": { "const": "settled" } } },
+          "then": { "properties": { "receipt": { "properties": { "status": { "enum": ["not-dispatched", "running", "completed", "stopping", "confirmed", "unconfirmed"] } } } } }
+        },
+        {
+          "if": { "properties": { "failure": { "type": "object" } } },
+          "then": { "properties": { "logical": { "const": "settled" } } }
+        },
+        {
+          "if": { "properties": { "receipt": { "properties": { "status": { "const": "unconfirmed" } } } } },
+          "then": { "properties": { "failure": { "type": "object", "properties": { "code": { "const": "termination-unconfirmed" } } } } }
+        },
+        {
+          "if": { "properties": { "failure": { "type": "object", "properties": { "code": { "const": "termination-unconfirmed" } } } } },
+          "then": { "properties": { "receipt": { "properties": { "status": { "const": "unconfirmed" } } } } }
+        },
+        {
+          "if": { "properties": { "failure": { "type": "object", "properties": { "code": { "const": "cleanup-failed" } } } } },
+          "then": { "properties": { "cleanup": { "const": "retained" } } }
+        },
+        {
+          "if": { "properties": { "cleanup": { "const": "retained" } } },
+          "then": { "anyOf": [
+            { "properties": { "receipt": { "properties": { "status": { "enum": ["stopping", "unconfirmed"] } } } } },
+            { "properties": { "failure": { "type": "object", "properties": { "code": { "const": "cleanup-failed" } } } } }
+          ] }
+        },
+        {
+          "if": { "properties": { "cleanup": { "const": "released" } } },
+          "then": { "properties": {
+            "logical": { "const": "settled" },
+            "receipt": { "properties": { "status": { "enum": ["not-dispatched", "completed", "confirmed"] } } }
+          } }
+        }
+      ]
+    }
+  }
+}

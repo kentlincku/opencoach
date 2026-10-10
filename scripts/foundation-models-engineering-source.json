@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "scope": "FM_ENGINEERING",
+  "files": {
+    ".gitignore": {
+      "bytes": 150,
+      "sha256": "def75c5d7a2414f4cf85d05eda2cd9a8bd64f3c6f3a0d80289586e1647b1ceaa"
+    },
+    "apps/desktop/credential-store.cjs": {
+      "bytes": 3427,
+      "sha256": "b8f8c616bdf17d39893064504696707a12b1f3f9c7457df9d5037e56ad3376b6"
+    },
+    "apps/desktop/foundation-models-client.cjs": {
+      "bytes": 7282,
+      "sha256": "604be762f6df56ac6ada1aec6257dd69cd96f7119003a45173c667f7e14d7b46"
+    },
+    "apps/desktop/foundation-models-service.cjs": {
+      "bytes": 6962,
+      "sha256": "4ac6a5ed8db583f7c218f9a1d2c91ccd2e294cc281f1863b8679372da43e0422"
+    },
+    "apps/desktop/lifecycle.cjs": {
+      "bytes": 538,
+      "sha256": "c5c298502f13b418e13b0a969e75b1a42a732ba61005606f76a82ca14f9d9cb1"
+    },
+    "apps/desktop/main.cjs": {
+      "bytes": 41590,
+      "sha256": "7f51aa3eac126563e1f2a57dd628d665c3043418b994f762932365b7a78bf740"
+    },
+    "apps/desktop/managed-asset-lease.cjs": {
+      "bytes": 17385,
+      "sha256": "f6e19dca0b74054053a937bd6f2e5adfb8dded1cefc09d73e4691c7fd58d1ad6"
+    },
+    "apps/desktop/model-manager.cjs": {
+      "bytes": 1852,
+      "sha256": "b7a52406d9008b6335b533961f38141c099b2f833ad7290380030b48480fd85b"
+    },
+    "apps/desktop/packaged-speech-profile.cjs": {
+      "bytes": 1094,
+      "sha256": "80e65b466b4e4c213b6dbdcb550e46d2909c0d296de247643b4f72dcd3ca91e4"
+    },
+    "apps/desktop/preload.cjs": {
+      "bytes": 4282,
+      "sha256": "cdc695efeba55d4a5e0f78ffa960586631959367146dd09f18b2aa7fb0029ecb"
+    },
+    "apps/desktop/provider-broker.cjs": {
+      "bytes": 7743,
+      "sha256": "4ca7251c738c33fbd4fc84cc5409397378189b1c6f9d7045cbc59a33f0b3b939"
+    },
+    "apps/desktop/runtime-health.cjs": {
+      "bytes": 1052,
+      "sha256": "aa5910d1a67af7f2ebe4ba38c6bca3bebb224be8d887483f81c3b1e4b42b19fa"
+    },
+    "apps/desktop/runtime-manager.cjs": {
+      "bytes": 16148,
+      "sha256": "42d9f6559e948cfccc1106f740d89046b4f17ae3208801acf64ef02568e2bfbe"
+    },
+    "apps/desktop/runtime-manifest.cjs": {
+      "bytes": 8040,
+      "sha256": "a2e614561947506c465c47afeef4684555cea4d359cdaa8bd05681fcf0e1f71b"
+    },
+    "apps/desktop/runtime-paths.cjs": {
+      "bytes": 4047,
+      "sha256": "2ee43d66ca37737af815c7e6449fb3970b0cd2b84defc822c024dc2938b07d01"
+    },
+    "apps/desktop/sidecar-client.cjs": {
+      "bytes": 26993,
+      "sha256": "1e7a3444e1347ef706034a58a8615a1565503733ccc2bd2ceb1889bb99f415da"
+    },
+    "apps/desktop/sidecar-environment.cjs": {
+      "bytes": 2989,
+      "sha256": "05153f8fca093935f5c38fa125ed655effa0f92b2f1a81cf3458127f30fbd457"
+    },
+    "apps/desktop/tree-integrity.cjs": {
+      "bytes": 7593,
+      "sha256": "17221dff733fb31c95be9c6d5dd6863ae5a653b449b1e9ba1c94cf17e14d0ee8"
+    },
+    "apps/desktop/voice-operation-ledger.cjs": {
+      "bytes": 14972,
+      "sha256": "dc818934bdbf53686e3686cf0c858de8bd075f578298e21db10bcf78289b8ad4"
+    },
+    "apps/web/index.html": {
+      "bytes": 186194,
+      "sha256": "c92e1b58c9f1357dfc8cd2c2a9b27492b869da5585a2f7434696ea1c6e789743"
+    },
+    "apps/web/runtime/browser-runtime.js": {
+      "bytes": 2315,
+      "sha256": "9df11e5710a8adf6d6759a67936a4e6edf5369fb07d37ce3972d45def4ad8c1e"
+    },
+    "apps/web/runtime/create-runtime.js": {
+      "bytes": 1600,
+      "sha256": "67b14dd9524c3a14412f3bf0969322ba6719d738d599e882d03f8608ed4154bb"
+    },
+    "apps/web/runtime/desktop-voice-operation-contract.js": {
+      "bytes": 7943,
+      "sha256": "1956fc99bf58f2d858f0fc7e758c9cb3e88bace564e5af44b14bd96eb44bc6a6"
+    },
+    "apps/web/runtime/desktop-voice-work-scope.js": {
+      "bytes": 9722,
+      "sha256": "0249d203331092e865109cbd5bc3536457da44122b134ebd988ee9fa4ce16480"
+    },
+    "apps/web/runtime/direct-api-presets.js": {
+      "bytes": 887,
+      "sha256": "1fd84c72370574285327418765e0ca543d61e7bbdf7547e48b7833ffb7a4f497"
+    },
+    "apps/web/runtime/electron-runtime.js": {
+      "bytes": 8456,
+      "sha256": "90ddb680bb16594eef96a008f5b53316a510a853458fb70021b8909d64549440"
+    },
+    "apps/web/runtime/language-policy.js": {
+      "bytes": 1649,
+      "sha256": "c6429976b5a9b968e4b342573b8650dae1404ef35fa9d98d6bbccff51961bc23"
+    },
+    "apps/web/runtime/lesson-library.js": {
+      "bytes": 4034,
+      "sha256": "7ed535a750c5ec1b71f06a8cea4c7b850e49dc34785e40b22121919619423fc6"
+    },
+    "apps/web/runtime/llm-provider-contract.js": {
+      "bytes": 9206,
+      "sha256": "4c6008591738491f33a2b507ce38cd3ac8869ceb9779147e2f53abb71ab7a37b"
+    },
+    "apps/web/runtime/local-endpoint-policy.js": {
+      "bytes": 4868,
+      "sha256": "50df6965eeb744c3799d888877408cb449ba828ddc615708d9290878c24f8d18"
+    },
+    "apps/web/runtime/model-cache.js": {
+      "bytes": 1007,
+      "sha256": "91c7eb816a973187a2f352e35e4168d6770846c3e36df9858ad37f44383e6712"
+    },
+    "apps/web/runtime/native-audio.js": {
+      "bytes": 6839,
+      "sha256": "8c31bf7ea06e43829534446af4df9c0fe3c7841280b2366a0fbb68879ded0ba4"
+    },
+    "apps/web/runtime/runtime-contract.js": {
+      "bytes": 4630,
+      "sha256": "a8ad7602157602978cd76c0e64210d38a50f60e5d01f491680f7c17d2f92d64f"
+    },
+    "apps/web/runtime/tts-preference.js": {
+      "bytes": 2303,
+      "sha256": "d7e488da38ef5b4e7f532ad73e5bc48694665a55208f6e86af1377d07bdd765a"
+    },
+    "electron-builder.yml": {
+      "bytes": 1648,
+      "sha256": "1708a0b33c2fa9880892db9e72ac64a396317a7507727ce01c263064a6bd66c1"
+    },
+    "native/apple/FoundationModelsHelper.swift": {
+      "bytes": 7452,
+      "sha256": "ec6bca47f15c8b4fd1f925a6e1a50128739e5c58eaa2b9b03182882148460238"
+    },
+    "package-lock.json": {
+      "bytes": 185251,
+      "sha256": "8fcd0de79ffb2850d0d0c979920e5e2d0f8cf351c063d7f8b93993a52a42ad73"
+    },
+    "package.json": {
+      "bytes": 1155,
+      "sha256": "d05e97797d0ff35660e1f8c12358a9a0a9363c1f92818148c3f26e6a97f997f3"
+    },
+    "scripts/build-foundation-models.cjs": {
+      "bytes": 12218,
+      "sha256": "a4148da7305c15a8f55895bc40e6154495348f9d33cacfb41083867f76d1789d"
+    },
+    "scripts/readback-foundation-models-engineering.cjs": {
+      "bytes": 13081,
+      "sha256": "92299405020393375f40132dae537497462527238e55f5460a751bad12693088"
+    },
+    "scripts/verify-foundation-models-bundle.cjs": {
+      "bytes": 595,
+      "sha256": "8ff8ed96b9f98d0785c3f525baab0d181543afe3c1c99fb2e1adbeaac672e21c"
+    },
+    "scripts/verify-foundation-models-engineering.cjs": {
+      "bytes": 8570,
+      "sha256": "918058c69ad019b3da9445455611c40f724108626258059f503c814b7044dc8b"
+    },
+    "scripts/verify-foundation-models-ui.cjs": {
+      "bytes": 14426,
+      "sha256": "72e64135abf267502cba3e2f81a2df710058b397668d9800d511285cf412dd95"
+    },
+    "tests/desktop-voice-work-scope.test.cjs": {
+      "bytes": 11784,
+      "sha256": "534e6aaa3466e3231a6064bbb34455fbf87db7f6c6aff90175d12d93eaa38c83"
+    },
+    "tests/fixtures/desktop-voice-stop-harness.cjs": {
+      "bytes": 8782,
+      "sha256": "0eb47a62811d404cc43c85777bf0b7ba0d50fa0f9b6209cd4a4cf639da4c97f4"
+    },
+    "tests/fixtures/foundation-models-child.cjs": {
+      "bytes": 1245,
+      "sha256": "4460fc72c068c5394bd5004676e621d6f355f2008dbf358d45a964c03dc26ef8"
+    },
+    "tests/foundation-models-engineering.test.cjs": {
+      "bytes": 29572,
+      "sha256": "d706a6be8f9bf8f3f56494b67160c3c7cd601ce9160682c62e3f6cc674b5e490"
+    },
+    "tests/foundation-models-integrity.test.cjs": {
+      "bytes": 4935,
+      "sha256": "49b051c6ba1cd97c7fc5369b459e7de480075bdaaccb1709bb6994d23f8761c4"
+    },
+    "tests/foundation-models-review-regressions.test.cjs": {
+      "bytes": 6090,
+      "sha256": "3c503ebcbc6b5314a81a2b0f6e45782bb657dd705085449c33f32c887c1f80b4"
+    },
+    "tests/foundation-models.test.cjs": {
+      "bytes": 23832,
+      "sha256": "ff6063c684c682ee18ca0160f4b46304f13fe613232ba31d881686eb8dd66ecc"
+    },
+    "tests/llm-provider-contract.test.cjs": {
+      "bytes": 8318,
+      "sha256": "1b9211716bab4f3e693f5935e00b66366a6a1cfa96ed74720a7d821df266de7c"
+    },
+    "tests/main-voice-operations.test.cjs": {
+      "bytes": 55896,
+      "sha256": "6524d7d7d809013d632ba6efc271a460214ff8ac1d0e37a22e1168f54d81b57b"
+    },
+    "tests/provider-settings.test.cjs": {
+      "bytes": 82471,
+      "sha256": "d2970d477cbe2e28b0c409ca75f11bb6fb07063d52e691190aba81a3db607f83"
+    },
+    "tests/foundation-models-document.test.cjs": {
+      "bytes": 13982,
+      "sha256": "eb7be9357d58ca4e59afd9eddd5fc1ef2a8b6b06dabc4838299eeb1850989262"
+    }
+  }
+}

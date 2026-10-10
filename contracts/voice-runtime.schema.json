@@ -40,7 +40,10 @@
       "uniqueItems": true
     },
     "whisperModel": { "type": "string" },
-    "executionProvider": { "type": ["string", "null"] }
+    "executionProvider": {
+      "type": ["string", "null"],
+      "enum": ["CPUExecutionProvider", "DmlExecutionProvider", "CUDAExecutionProvider", null]
+    }
   },
   "additionalProperties": false
 }

@@ -20,9 +20,16 @@ def clean_text_for_speech(text: str) -> str:
     cleaned = re.sub(r"(?m)^[ \t]*(?:[-*+\u2022]|\d+[.)])[ \t]+", "", cleaned)
     cleaned = re.sub(r"[ \t]*\n+[ \t]*", lambda m: ". " if "\n\n" in m.group() else ", ", cleaned)
     cleaned = re.sub(r"(?<=\s)[-\u2013\u2014](?=\s)", ",", cleaned)
+    # Chat-model shorthand the English G2P cannot read: "a/b" words, "1-2" ranges, "5/5" ratings.
+    cleaned = re.sub(r"(?<=[A-Za-z])/(?=[A-Za-z])", " or ", cleaned)
+    cleaned = re.sub(r"(?<![0-9.,])([0-9]+)\s*[-\u2014]\s*([0-9]+)(?![0-9.,])", r"\1 to \2", cleaned)
+    cleaned = re.sub(r"(?<![0-9.,/])([0-9]+)/([0-9]+)(?![0-9/])", r"\1 out of \2", cleaned)
     cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", cleaned)
     cleaned = re.sub(r"\*([^*]+)\*", r"\1", cleaned)
-    cleaned = re.sub(r"[#_~`^>]", "", cleaned)
+    cleaned = re.sub(r"[#_~`^>*\[\]{}|]", "", cleaned)
+    # Stray quote at a word edge ('I'll -> I'll) and a free-standing "+" add nothing spoken.
+    cleaned = re.sub(r"(?<![A-Za-z])'(?=[A-Za-z])|(?<=[A-Za-z.!?,])'(?![A-Za-z])", "", cleaned)
+    cleaned = re.sub(r"(?:(?<=\s)|^)\+(?=\s|$)", "", cleaned)
     cleaned = re.sub(r"\.{2,}", ", ", cleaned)
     cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
     cleaned = re.sub(r"([,.;:!?])(?:\s*[,.](?=\s|$))+", r"\1", cleaned)

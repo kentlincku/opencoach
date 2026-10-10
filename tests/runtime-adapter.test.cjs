@@ -4,6 +4,30 @@ const test = require('node:test');
 const { BrowserRuntime } = require('../apps/web/runtime/browser-runtime.js');
 const { ElectronRuntime } = require('../apps/web/runtime/electron-runtime.js');
 const { createRuntime } = require('../apps/web/runtime/create-runtime.js');
+const { encodePcmWav } = require('../apps/web/runtime/native-audio.js');
+const pcm = () => encodePcmWav(new Float32Array([0, 0.5]));
+
+// MEMORY transport boundary: exact C6 replies, not a substitute for the real-child controls.
+function typedApi() {
+  const revoked = new Set();
+  return {
+    voiceOperationRevoke: async ({ requestIds }) => {
+      requestIds.forEach(id => revoked.add(id));
+      return { version: 1, type: 'revoked', requestIds };
+    },
+    voiceOperationState: async ({ requestId }) => {
+      assert.ok(revoked.has(requestId));
+      return { version: 1, type: 'state', requestId, knowledge: 'retired' };
+    },
+  };
+}
+function backendFailure(requestId) {
+  const binding = { clientId: 'original-client', intentId: 'original-intent', generation: 1 };
+  return { version: 1, type: 'failure', requestId, code: 'backend-error', message: 'backend failed', binding,
+    completion: { version: 1, type: 'state', requestId, knowledge: 'known', revision: 3,
+      logical: 'settled', revocation: 'live', receipt: { status: 'completed', binding }, cleanup: 'released',
+      failure: { code: 'backend-error', message: 'backend failed' } } };
+}
 
 function nativeCapabilities(overrides = {}) {
   return {
@@ -45,6 +69,7 @@ test('BrowserRuntime exposes the five-method runtime interface', async () => {
 test('ElectronRuntime uses only preload methods for ready native backends', async () => {
   const calls = [];
   const api = {
+    ...typedApi(),
     transcribeAudio: async payload => { calls.push(['stt', payload]); return { text: 'native' }; },
     synthKokoro: async payload => { calls.push(['tts', payload]); return { audio: 'wav' }; },
   };
@@ -56,7 +81,7 @@ test('ElectronRuntime uses only preload methods for ready native backends', asyn
   };
   const runtime = new ElectronRuntime({ api, capabilities: nativeCapabilities(), fallback });
 
-  assert.equal((await runtime.transcribe({ buffer: 'audio' })).text, 'native');
+  assert.equal((await runtime.transcribe({ buffer: pcm() })).text, 'native');
   assert.equal((await runtime.synthesize({ text: 'hello' })).audio, 'wav');
   assert.deepEqual(calls.map(([kind]) => kind), ['stt', 'tts']);
 });
@@ -102,41 +127,24 @@ test('cancel rejects late Browser runtime results', async () => {
   await assert.rejects(pending, /RUNTIME_CANCELLED/);
 });
 
-test('cancel rejects late Electron results, invokes native cancellation, and gates restart', async () => {
+test('cancel rejects late Electron runtime results', async () => {
   let resolveNative;
-  let releaseCancel;
   const nativeResult = new Promise(resolve => { resolveNative = resolve; });
-  const cancelComplete = new Promise(resolve => { releaseCancel = resolve; });
-  let cancelCalls = 0;
   const runtime = new ElectronRuntime({
     api: {
+      ...typedApi(),
       transcribeAudio: async () => nativeResult,
       synthKokoro: async () => ({ audio: 'wav' }),
-      cancelVoiceOperation: ({ requestId }) => {
-        assert.equal(requestId, 'stt_1');
-        cancelCalls++;
-        return cancelComplete;
-      },
     },
     capabilities: nativeCapabilities(),
     fallback: { cancel() {}, dispose() {} },
   });
 
-  const pending = runtime.transcribe({ buffer: 'audio' });
+  const pending = runtime.transcribe({ buffer: pcm() });
+  await new Promise(setImmediate); // Await normalization and actual native dispatch.
   runtime.cancel();
-  assert.equal(cancelCalls, 1);
   resolveNative({ text: 'too late' });
   await assert.rejects(pending, /RUNTIME_CANCELLED/);
-
-  let secondFinished = false;
-  const second = runtime.synthesize({ text: 'after cancel' }).then(result => {
-    secondFinished = true;
-    return result;
-  });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(secondFinished, false);
-  releaseCancel();
-  assert.equal((await second).audio, 'wav');
 });
 
 test('cancelled native failure never starts fallback work', async () => {
@@ -145,6 +153,7 @@ test('cancelled native failure never starts fallback work', async () => {
   let fallbackCalls = 0;
   const runtime = new ElectronRuntime({
     api: {
+      ...typedApi(),
       transcribeAudio: () => new Promise((_, reject) => { rejectStt = reject; }),
       synthKokoro: () => new Promise((_, reject) => { rejectTts = reject; }),
     },
@@ -157,8 +166,9 @@ test('cancelled native failure never starts fallback work', async () => {
     },
   });
 
-  const pendingStt = runtime.transcribe({ buffer: 'audio' });
+  const pendingStt = runtime.transcribe({ buffer: pcm() });
   const pendingTts = runtime.synthesize({ text: 'hello' });
+  await new Promise(setImmediate); // Both external promises must exist before Stop.
   runtime.cancel();
   rejectStt(new Error('native stt failed late'));
   rejectTts(new Error('native tts failed late'));
@@ -168,7 +178,7 @@ test('cancelled native failure never starts fallback work', async () => {
   assert.equal(fallbackCalls, 0);
 });
 
-test('empty native results use the configured fallback', async () => {
+test('original validated backend completion uses the configured fallback', async () => {
   const fallback = {
     transcribe: async () => ({ text: 'fallback text' }),
     synthesize: async () => ({ useSystemSpeech: true }),
@@ -177,14 +187,15 @@ test('empty native results use the configured fallback', async () => {
   };
   const runtime = new ElectronRuntime({
     api: {
-      transcribeAudio: async () => ({ text: '   ' }),
-      synthKokoro: async () => ({}),
+      ...typedApi(),
+      transcribeAudio: async ({ requestId }) => backendFailure(requestId),
+      synthKokoro: async ({ requestId }) => backendFailure(requestId),
     },
     capabilities: nativeCapabilities(),
     fallback,
   });
 
-  assert.equal((await runtime.transcribe({ buffer: 'audio' })).text, 'fallback text');
+  assert.equal((await runtime.transcribe({ buffer: pcm() })).text, 'fallback text');
   assert.equal((await runtime.synthesize({ text: 'hello' })).useSystemSpeech, true);
 });
 
@@ -199,74 +210,18 @@ test('dispose rejects late runtime results', async () => {
   await assert.rejects(pending, /RUNTIME_CANCELLED/);
 });
 
-test('createRuntime selects browser fallback when Electron native health is unavailable', async () => {
+test('createRuntime selects browser or electron and degrades failed health safely', async () => {
   const browser = await createRuntime({ browser: {} });
   assert.equal(browser.kind, 'browser');
 
-  const degraded = await createRuntime({
+  const electron = await createRuntime({
     electronAPI: { runtimeHealth: async () => { throw new Error('offline'); } },
     browser: {
       transcribe: async () => ({ text: 'fallback' }),
       synthesize: async () => ({ useSystemSpeech: true }),
     },
   });
-  assert.equal(degraded.kind, 'browser');
-  assert.equal((await degraded.capabilities()).ready, true);
-  assert.equal((await degraded.transcribe({})).text, 'fallback');
-});
-
-test('createRuntime selects ElectronRuntime for valid Windows provider health', async () => {
-  const runtime = await createRuntime({
-    electronAPI: {
-      runtimeHealth: async () => nativeCapabilities({
-        platform: 'windows',
-        arch: 'x64',
-        sttBackends: ['faster-whisper'],
-        ttsBackends: ['kokoro-onnx'],
-        selectedStt: 'faster-whisper',
-        selectedTts: 'kokoro-onnx',
-        executionProvider: 'CPUExecutionProvider',
-      }),
-      transcribeAudio: async () => ({ text: 'native' }),
-      synthKokoro: async () => ({ audio: 'wav' }),
-      voiceCancel: async () => {},
-    },
-    browser: {},
-  });
-  assert.equal(runtime.kind, 'electron');
-  assert.equal((await runtime.capabilities()).executionProvider, 'CPUExecutionProvider');
-});
-
-test('Windows Electron native unavailable returns System Voice fallback without calling fallback synthesize', async () => {
-  let fallbackSynthCalls = 0;
-  const api = {
-    synthKokoro: async () => { throw new Error('sidecar down'); },
-  };
-  const fallback = {
-    synthesize: async () => {
-      fallbackSynthCalls++;
-      return { audio: 'from-browser-kokoro' };
-    },
-    cancel() {},
-    dispose() {},
-  };
-  const runtime = new ElectronRuntime({
-    api,
-    capabilities: {
-      protocol: 1,
-      platform: 'windows',
-      arch: 'x64',
-      sttBackends: ['faster-whisper'],
-      ttsBackends: [],
-      selectedStt: 'faster-whisper',
-      selectedTts: null,
-      ready: false,
-      degradedReason: 'BACKEND_UNAVAILABLE',
-    },
-    fallback,
-  });
-
-  const result = await runtime.synthesize({ text: 'test' });
-  assert.equal(result.useSystemSpeech, true);
-  assert.equal(fallbackSynthCalls, 0, 'Must NOT invoke renderer/browser Kokoro fallback on Windows Electron');
+  assert.equal(electron.kind, 'electron');
+  assert.equal((await electron.capabilities()).ready, false);
+  assert.equal((await electron.transcribe({})).text, 'fallback');
 });

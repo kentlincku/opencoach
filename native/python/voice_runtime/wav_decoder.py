@@ -1,130 +1,60 @@
-"""RIFF PCM WAV decoder strictly validating 16-bit 16kHz mono/stereo WAV within controlled root."""
-from __future__ import annotations
-
+"""Decode runtime PCM WAV input without a media-decoder fallback."""
 import struct
 from pathlib import Path
-from typing import Union
 
-try:
-    import numpy as np
-except ImportError:
-    np = None
+from .backends.base import BackendInputError
 
-from .backends.base import BackendInputError, validate_audio_path
+# Same byte ceiling as Desktop IPC, enforced independently for runtime callers.
+MAX_WAV_BYTES = 25 * 1024 * 1024
 
 
-def read_pcm_wav(
-    audio_path: Union[str, Path],
-    allowed_audio_root: Path,
-) -> np.ndarray:
-    """Decode and validate a 16-bit 16kHz PCM WAV file from an allowed audio root.
+def decode_wav(path: Path):
+    """Return 1-D float32 16 kHz PCM; caller must authorize the resolved path.
 
-    Returns:
-        1D float32 numpy array normalized to [-1.0, 1.0] at 16000 Hz.
-    Raises:
-        BackendInputError: If file is outside allowed root, malformed RIFF,
-                           missing fmt or data chunk, unsupported encoding,
-                           wrong sample rate, truncated, etc.
+    Supports format-tag 1, 16-bit mono/stereo only (not WAVE_FORMAT_EXTENSIBLE).
+    RIFF size, every chunk and padding byte must fit the complete bounded file.
+    Unknown chunks are skipped, not decoded; no resampling or codec fallback.
     """
-    valid_path = validate_audio_path(str(audio_path), allowed_audio_root)
-    if not valid_path.is_file():
-        raise BackendInputError("AUDIO_FILE_NOT_FOUND")
-
-    try:
-        data = valid_path.read_bytes()
-    except Exception as err:
-        raise BackendInputError(f"FAILED_TO_READ_AUDIO_FILE: {err}") from err
-
-    return parse_pcm_wav_bytes(data)
-
-
-def parse_pcm_wav_bytes(data: bytes) -> np.ndarray:
-    """Parse RIFF PCM WAV byte content into a 1D float32 numpy array."""
-    if len(data) < 12:
-        raise BackendInputError("MALFORMED_RIFF_HEADER")
-
-    riff_tag = data[0:4]
-    riff_size = struct.unpack("<I", data[4:8])[0]
-    wave_tag = data[8:12]
-
-    if riff_tag != b"RIFF" or wave_tag != b"WAVE":
-        raise BackendInputError("MALFORMED_RIFF_HEADER")
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_WAV_BYTES + 1)
+    if len(raw) > MAX_WAV_BYTES:
+        raise BackendInputError("AUDIO_PAYLOAD_TOO_LARGE")
+    if (len(raw) < 12 or raw[:4] != b"RIFF" or raw[8:12] != b"WAVE"
+            or struct.unpack_from("<I", raw, 4)[0] != len(raw) - 8):
+        raise BackendInputError("INVALID_WAV")
 
     offset = 12
-    fmt_parsed = False
-    audio_format = 0
-    num_channels = 0
-    sample_rate = 0
-    bits_per_sample = 0
-    pcm_samples_bytes = None
+    channels = None
+    pcm = None
+    while offset < len(raw):
+        if len(raw) - offset < 8:
+            raise BackendInputError("INVALID_WAV")
+        tag = raw[offset:offset + 4]
+        size = struct.unpack_from("<I", raw, offset + 4)[0]
+        start = offset + 8
+        end = start + size
+        offset = end + (size % 2)
+        if offset > len(raw):
+            raise BackendInputError("INVALID_WAV")
+        if tag == b"fmt ":
+            if channels is not None or size < 16:
+                raise BackendInputError("INVALID_WAV")
+            encoding, channels, rate, byte_rate, align, bits = struct.unpack_from("<HHIIHH", raw, start)
+            if (encoding != 1 or channels not in (1, 2) or rate != 16000 or bits != 16
+                    or align != channels * 2 or byte_rate != rate * align
+                    or size not in (16, 18)
+                    or (size == 18 and raw[start + 16:end] != b"\0\0")):
+                raise BackendInputError("UNSUPPORTED_WAV_FORMAT")
+        elif tag == b"data":
+            if channels is None or pcm is not None:
+                raise BackendInputError("INVALID_WAV")
+            pcm = memoryview(raw)[start:end]
+    if channels is None or pcm is None or not pcm or len(pcm) % (channels * 2):
+        raise BackendInputError("INVALID_WAV")
 
-    while offset + 8 <= len(data):
-        chunk_id = data[offset:offset+4]
-        chunk_size = struct.unpack("<I", data[offset+4:offset+8])[0]
-        chunk_data_offset = offset + 8
-        chunk_end = chunk_data_offset + chunk_size
+    import numpy as np
 
-        if chunk_end > len(data):
-            raise BackendInputError("TRUNCATED_WAV_CHUNK")
-
-        if chunk_id == b"fmt ":
-            if chunk_size < 16:
-                raise BackendInputError("MALFORMED_FMT_CHUNK")
-            audio_format, num_channels, sample_rate, byte_rate, block_align, bits_per_sample = struct.unpack(
-                "<HHIIHH", data[chunk_data_offset:chunk_data_offset+16]
-            )
-            # Handle WAVE_FORMAT_EXTENSIBLE (0xFFFE)
-            if audio_format == 0xFFFE and chunk_size >= 40:
-                sub_format = data[chunk_data_offset+24:chunk_data_offset+40]
-                pcm_guid = bytes([
-                    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
-                    0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71
-                ])
-                if sub_format == pcm_guid:
-                    audio_format = 1
-
-            fmt_parsed = True
-
-        elif chunk_id == b"data":
-            if not fmt_parsed:
-                raise BackendInputError("MISSING_FMT_CHUNK")
-            pcm_samples_bytes = data[chunk_data_offset:chunk_end]
-            break
-
-        offset = chunk_end + (chunk_size % 2)
-
-    if not fmt_parsed:
-        raise BackendInputError("MISSING_FMT_CHUNK")
-    if pcm_samples_bytes is None:
-        raise BackendInputError("MISSING_DATA_CHUNK")
-
-    if audio_format != 1:
-        raise BackendInputError(f"UNSUPPORTED_ENCODING: {audio_format}")
-
-    if bits_per_sample != 16:
-        raise BackendInputError(f"UNSUPPORTED_BIT_DEPTH: {bits_per_sample}")
-
-    if sample_rate != 16000:
-        raise BackendInputError(f"UNSUPPORTED_SAMPLE_RATE: {sample_rate} (expected 16000)")
-
-    if num_channels not in (1, 2):
-        raise BackendInputError(f"UNSUPPORTED_CHANNELS: {num_channels} (must be mono or stereo)")
-
-    bytes_per_sample = 2
-    frame_size = num_channels * bytes_per_sample
-    if len(pcm_samples_bytes) % frame_size != 0:
-        raise BackendInputError("TRUNCATED_WAV_CHUNK")
-
-    if np is None:
-        raise RuntimeError("NumPy is required to decode PCM WAV audio")
-
-    raw_samples = np.frombuffer(pcm_samples_bytes, dtype=np.int16)
-    if len(raw_samples) == 0:
-        raise BackendInputError("MISSING_DATA_CHUNK")
-
-    float_samples = raw_samples.astype(np.float32) / 32768.0
-
-    if num_channels == 2:
-        return ((float_samples[0::2] + float_samples[1::2]) / 2.0).astype(np.float32)
-
-    return float_samples
+    samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / np.float32(32768)
+    if channels == 2:
+        samples = samples.reshape(-1, 2).mean(axis=1, dtype=np.float32)
+    return samples

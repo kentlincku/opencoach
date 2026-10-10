@@ -22,6 +22,9 @@
 		A10000102C7F000100000001 /* AppleFoundationModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000102C7F000100000001 /* AppleFoundationModelService.swift */; };
 		A10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift */; };
 		A10000122C7F000100000001 /* NativeSpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000122C7F000100000001 /* NativeSpeechService.swift */; };
+		A10000142C7F000100000001 /* SubscriptionAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000142C7F000100000001 /* SubscriptionAuth.swift */; };
+		A10000152C7F000100000001 /* SubscriptionAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000152C7F000100000001 /* SubscriptionAuthTests.swift */; };
+		A10000132C7F000100000001 /* NativeSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000132C7F000100000001 /* NativeSpeechRecognizer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +56,9 @@
 		B10000102C7F000100000001 /* AppleFoundationModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelService.swift; sourceTree = "<group>"; };
 		B10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelServiceTests.swift; sourceTree = "<group>"; };
 		B10000122C7F000100000001 /* NativeSpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSpeechService.swift; sourceTree = "<group>"; };
+		B10000142C7F000100000001 /* SubscriptionAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionAuth.swift; sourceTree = "<group>"; };
+		B10000152C7F000100000001 /* SubscriptionAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionAuthTests.swift; sourceTree = "<group>"; };
+		B10000132C7F000100000001 /* NativeSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSpeechRecognizer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,6 +114,7 @@
 				B10000022C7F000100000001 /* ContentView.swift */,
 				B100000C2C7F000100000001 /* ScriptBridgeHandler.swift */,
 				B10000122C7F000100000001 /* NativeSpeechService.swift */,
+				B10000132C7F000100000001 /* NativeSpeechRecognizer.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -120,6 +127,7 @@
 				B10000052C7F000100000001 /* KeychainStore.swift */,
 				B100000E2C7F000100000001 /* CredentialBinding.swift */,
 				B10000102C7F000100000001 /* AppleFoundationModelService.swift */,
+				B10000142C7F000100000001 /* SubscriptionAuth.swift */,
 			);
 			name = Core;
 			path = Sources/VoicePracticeCore;
@@ -133,6 +141,7 @@
 				B100000D2C7F000100000001 /* ScriptBridgeHandlerTests.swift */,
 				B100000F2C7F000100000001 /* ScriptBridgeHandlerNavigationTests.swift */,
 				B10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift */,
+				B10000152C7F000100000001 /* SubscriptionAuthTests.swift */,
 			);
 			name = Tests;
 			path = Tests/VoicePracticeXCTests;
@@ -242,11 +251,13 @@
 				A10000022C7F000100000001 /* ContentView.swift in Sources */,
 				A100000C2C7F000100000001 /* ScriptBridgeHandler.swift in Sources */,
 				A10000122C7F000100000001 /* NativeSpeechService.swift in Sources */,
+				A10000132C7F000100000001 /* NativeSpeechRecognizer.swift in Sources */,
 				A10000032C7F000100000001 /* LocalModelClient.swift in Sources */,
 				A10000042C7F000100000001 /* VoiceWebBridge.swift in Sources */,
 				A10000052C7F000100000001 /* KeychainStore.swift in Sources */,
 				A100000E2C7F000100000001 /* CredentialBinding.swift in Sources */,
 				A10000102C7F000100000001 /* AppleFoundationModelService.swift in Sources */,
+				A10000142C7F000100000001 /* SubscriptionAuth.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,12 +272,15 @@
 				A100000F2C7F000100000001 /* ScriptBridgeHandlerNavigationTests.swift in Sources */,
 				A100000C2C7F000100000001 /* ScriptBridgeHandler.swift in Sources */,
 				A10000122C7F000100000001 /* NativeSpeechService.swift in Sources */,
+				A10000132C7F000100000001 /* NativeSpeechRecognizer.swift in Sources */,
 				A10000032C7F000100000001 /* LocalModelClient.swift in Sources */,
 				A10000042C7F000100000001 /* VoiceWebBridge.swift in Sources */,
 				A10000052C7F000100000001 /* KeychainStore.swift in Sources */,
 				A100000E2C7F000100000001 /* CredentialBinding.swift in Sources */,
 				A10000102C7F000100000001 /* AppleFoundationModelService.swift in Sources */,
 				A10000112C7F000100000001 /* AppleFoundationModelServiceTests.swift in Sources */,
+				A10000142C7F000100000001 /* SubscriptionAuth.swift in Sources */,
+				A10000152C7F000100000001 /* SubscriptionAuthTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

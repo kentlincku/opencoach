@@ -1,26 +1,205 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { parseRuntimeManifest, selectRuntimeArtifact, parseArtifact, parseModelManifest } = require('../apps/desktop/runtime-manifest.cjs');
+const { canonicalInventory, ASSET_LIMITS } = require('../apps/desktop/tree-integrity.cjs');
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const { parseRuntimeManifest, selectRuntimeArtifact } = require('../apps/desktop/runtime-manifest.cjs');
+const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+const { resolveModelBindings } = require('../apps/desktop/runtime-manifest.cjs');
 
-const good = () => ({schemaVersion: 1, release: '0.2.0-beta.1', artifacts: {
-  'darwin-arm64': {url: 'https://github.com/kentlin/voice-practice/releases/download/runtime-v1/voice-runtime.zip', sha256: 'a'.repeat(64), bytes: 42, entrypoint: 'bin/voice-runtime', archive: 'zip'},
-  'win32-x64-cpu': {url: 'https://github.com/kentlin/voice-practice/releases/download/runtime-v1/voice-runtime.zip', sha256: 'b'.repeat(64), bytes: 43, entrypoint: 'voice-runtime.exe', archive: 'zip'},
+test('binding resolver requires exact trusted model platform archive and inventoried role file', () => {
+  assert.equal(typeof resolveModelBindings, 'function');
+  const runtime = artifact();
+  const model = (id, data) => {
+    const a = artifact(); delete a.modelBindings;
+    a.sha256 = hash(`${data} fixture`);
+    a.files = [{path: 'model.onnx', bytes: 1, sha256: hash('m')}, {path: 'voices.bin', bytes: 1, sha256: hash('v')}];
+    a.entrypoint = 'model.onnx'; a.treeDigest = canonicalInventory(a.files).treeDigest;
+    return [id, {name: id, purpose: data, license: a.provenance.license, artifacts: {'win32-x64-cpu': a}}];
+  };
+  const manifest = {schemaVersion: 2, release: 'tiny', models: Object.fromEntries([model('faster-whisper', 'stt'), model('kokoro-onnx', 'tts')])};
+  const resolved = resolveModelBindings(runtime, manifest, 'win32-x64-cpu');
+  assert.deepEqual(resolved, runtime.modelBindings);
+  assert.ok(Object.isFrozen(resolved.onnxModel));
+  for (const mutate of [m => { delete m.models['faster-whisper']; },
+    m => { m.models['kokoro-onnx'].artifacts['win32-x64-cpu'].sha256 = hash('different'); },
+    m => { delete m.models['kokoro-onnx'].artifacts['win32-x64-cpu']; }]) {
+    const m = structuredClone(manifest); mutate(m);
+    assert.throws(() => resolveModelBindings(runtime, m, 'win32-x64-cpu'), /BINDING/);
+  }
+  const wrongPath = structuredClone(runtime); wrongPath.modelBindings.onnxVoices.path = 'absent.bin';
+  assert.throws(() => resolveModelBindings(wrongPath, manifest, 'win32-x64-cpu'), /BINDING/);
+  assert.throws(() => resolveModelBindings(runtime, manifest, 'linux-x64'), /PLATFORM/);
+  const a = artifact(); delete a.modelBindings;
+  assert.throws(() => resolveModelBindings(a, manifest, 'win32-x64-cpu'));
+});
+// Tiny synthetic contract data, not release/model trust metadata.
+const artifact = () => ({url: 'https://github.com/fixture/assets/releases/download/test/tiny.zip',
+  sha256: hash('tiny archive fixture'), bytes: 20, archive: 'zip', entrypoint: 'bin/runtime.exe',
+  files: [{path: 'bin/runtime.exe', bytes: 1, sha256: hash('x')}],
+  treeDigest: canonicalInventory([{path: 'bin/runtime.exe', bytes: 1, sha256: hash('x')}]).treeDigest,
+  provenance: {sourceRevision: hash('fixture source'), sourceUrl: 'https://example.test/fixture', license: {spdx: 'MIT', url: 'https://example.test/license'}},
+  modelBindings: {sttRoot: {modelId: 'faster-whisper', archiveSha256: hash('stt fixture')},
+    onnxModel: {modelId: 'kokoro-onnx', archiveSha256: hash('tts fixture'), path: 'model.onnx'},
+    onnxVoices: {modelId: 'kokoro-onnx', archiveSha256: hash('tts fixture'), path: 'voices.bin'}}});
+
+// Tiny raw contract fixtures; these URLs are never contacted by this test.
+const rawArtifact = () => {
+  const files = [{path: 'config.json', bytes: 2, sha256: hash('{}')},
+    {path: 'weights.safetensors', bytes: 3, sha256: hash('raw')}];
+  const revision = hash('tiny raw source fixture').slice(0, 40);
+  return {transport: 'raw-files', bytes: 5, entrypoint: 'config.json', files,
+    treeDigest: canonicalInventory(files).treeDigest,
+    sources: Object.fromEntries(files.map(file => [file.path,
+      `https://huggingface.co/fixture/tiny-model/resolve/${revision}/${file.path}`])),
+    provenance: {sourceRevision: revision, sourceUrl: 'https://huggingface.co/fixture/tiny-model',
+      license: {spdx: 'MIT', url: 'https://example.test/fixture-license'}}};
+};
+const rawManifest = () => {
+  const a = rawArtifact();
+  return {schemaVersion: 3, release: 'tiny-raw-fixture', models: {'tiny-raw-model': {
+    name: 'Tiny raw fixture', purpose: 'stt', license: a.provenance.license, artifacts: {'darwin-arm64': a}}}};
+};
+
+test('v3 model manifest parses frozen raw inventory and exact source mapping without ZIP fields', () => {
+  const input = rawManifest();
+  const parsed = parseModelManifest(input);
+  assert.deepEqual(parsed, input);
+  const a = parsed.models['tiny-raw-model'].artifacts['darwin-arm64'];
+  for (const value of [parsed, parsed.models, parsed.models['tiny-raw-model'], a, a.files, a.files[0], a.sources, a.provenance]) {
+    assert.ok(Object.isFrozen(value));
+  }
+  assert.deepEqual(parseArtifact(rawArtifact(), 'model', 3), a);
+  for (const name of ['url', 'sha256', 'archive', 'modelBindings']) assert.equal(Object.hasOwn(a, name), false);
+});
+
+test('raw initial sources are pinned official HTTPS URLs, separate from legacy ZIP policy', () => {
+  const {validateRawModelUrl, validateUrl} = require('../apps/desktop/runtime-manifest.cjs');
+  const a = rawArtifact();
+  const source = a.sources['config.json'];
+  const github = 'https://github.com/fixture/assets/releases/download/test/config.json';
+  assert.equal(typeof validateRawModelUrl, 'function');
+  assert.equal(validateRawModelUrl(source), source);
+  assert.equal(validateRawModelUrl(github), github);
+  assert.throws(() => validateUrl(source), /UNTRUSTED_ARTIFACT_URL/);
+  for (const url of [
+    source.replace('/resolve/', '/blob/'), source.replace(a.provenance.sourceRevision, 'main'),
+    source.replace(a.provenance.sourceRevision, a.provenance.sourceRevision.slice(0, 7)),
+    source.replace(a.provenance.sourceRevision, a.provenance.sourceRevision.toUpperCase()),
+    source.replace('https:', 'http:'), source.replace('https:', 'file:'), 'data:text/plain,model',
+    source.replace('huggingface.co', 'huggingface.co.evil.test'), source.replace('huggingface.co', 'evil.test'),
+    source.replace('huggingface.co', 'huggingface.co:444'), source.replace('huggingface.co', 'user@huggingface.co'),
+    source.replace('huggingface.co', 'user:pass@huggingface.co'), source + '#fragment', source + '#',
+    source + '?revision=main', source.replace('config.json', '../config.json'),
+    source.replace('config.json', '%2e%2e/config.json'), source.replace('config.json', 'sub%2fconfig.json'),
+    source.replace('config.json', 'sub\\\\config.json'), source.replace('config.json', 'CON'),
+    'https://cas-bridge.xethub.hf.co/arbitrary', 'https://github.com/fixture/assets/blob/main/config.json',
+  ]) {
+    const bad = rawManifest(); bad.models['tiny-raw-model'].artifacts['darwin-arm64'].sources['config.json'] = url;
+    assert.throws(() => parseModelManifest(bad), undefined, url);
+    assert.throws(() => validateRawModelUrl(url), undefined, url);
+  }
+});
+
+test('artifactIdentity discriminates frozen ZIP archive hashes from raw inventory digests', () => {
+  const {artifactIdentity} = require('../apps/desktop/runtime-manifest.cjs');
+  assert.equal(typeof artifactIdentity, 'function');
+  const zip = artifact(); const raw = rawArtifact();
+  const archiveIdentity = artifactIdentity(zip);
+  const rawIdentity = artifactIdentity(raw);
+  assert.deepEqual(archiveIdentity, {kind: 'zip', archiveSha256: zip.sha256});
+  assert.deepEqual(rawIdentity, {kind: 'raw-files', treeDigest: raw.treeDigest});
+  assert.ok(Object.isFrozen(archiveIdentity)); assert.ok(Object.isFrozen(rawIdentity));
+  assert.equal(Object.hasOwn(rawIdentity, 'archiveSha256'), false);
+  for (const bad of [null, {}, {...raw, transport: 'zip'}, {...raw, sha256: raw.treeDigest},
+    {...raw, treeDigest: hash('not this inventory')}, {...zip, transport: 'raw-files'}, {...zip, sha256: 'not-a-hash'}]) {
+    assert.throws(() => artifactIdentity(bad));
+  }
+});
+
+test('v3 parsing and identity never promote fixture metadata to compiled production authority', () => {
+  const {authenticateAssetManifest, manifestAuthority, manifestDigest, inheritManifestAuthority} = require('../apps/desktop/asset-manifest-trust.cjs');
+  const input = rawManifest();
+  assert.equal(manifestAuthority(parseModelManifest(input)), null);
+  assert.throws(() => authenticateAssetManifest(input, 'model'), /ASSET_MANIFEST_UNTRUSTED/);
+  authenticateAssetManifest(input, 'model', {testOnlyTrustedDigests: [manifestDigest(input)]});
+  const parsed = inheritManifestAuthority(input, parseModelManifest(input));
+  assert.equal(manifestAuthority(parsed).authority, 'NON_NATIVE_TEST_ROOT');
+  assert.equal(manifestAuthority(structuredClone(parsed)), null);
+});
+
+test('v3 raw JSON boundaries reject proxies before invoking their traps', () => {
+  const {artifactIdentity} = require('../apps/desktop/runtime-manifest.cjs');
+  let traps = 0;
+  const wrap = value => new Proxy(value, Object.fromEntries(['get', 'ownKeys', 'getOwnPropertyDescriptor', 'getPrototypeOf'].map(name => [name,
+    (...args) => { traps++; return Reflect[name](...args); }])));
+  assert.throws(() => parseModelManifest(wrap(rawManifest())));
+  for (const field of ['artifact', 'files', 'file', 'sources', 'provenance']) {
+    let a = rawArtifact();
+    if (field === 'artifact') a = wrap(a);
+    else if (field === 'file') a.files[0] = wrap(a.files[0]);
+    else a[field] = wrap(a[field]);
+    assert.throws(() => parseArtifact(a, 'model', 3));
+    assert.throws(() => artifactIdentity(a));
+  }
+  assert.equal(traps, 0);
+});
+
+test('v3 raw descriptors reject non-JSON prototypes and accessors before reading them', () => {
+  let reads = 0;
+  for (const change of [
+    a => { Object.setPrototypeOf(a.files[0], {inherited: true}); },
+    a => { Object.setPrototypeOf(a.files, {map: Array.prototype.map}); },
+    a => { Object.setPrototypeOf(a.sources, {inherited: 'https://example.test'}); },
+    a => { Object.defineProperty(a.files[0], 'sha256', {enumerable: true, get() { reads++; return hash('{}'); }}); },
+    a => { Object.defineProperty(a.sources, 'config.json', {enumerable: true, get() { reads++; return rawArtifact().sources['config.json']; }}); },
+    a => { Object.defineProperty(a, 'hidden', {value: true}); },
+    a => { a.files.hidden = true; }, a => { delete a.files[0]; },
+    a => { a[Symbol('unknown')] = true; },
+  ]) {
+    const a = rawArtifact(); change(a);
+    assert.throws(() => parseArtifact(a, 'model', 3));
+    const m = rawManifest(); m.models['tiny-raw-model'].artifacts['darwin-arm64'] = a;
+    assert.throws(() => parseModelManifest(m));
+  }
+  assert.equal(reads, 0, 'raw validation must not invoke user-defined getters');
+});
+
+test('v3 raw exact fields preserve v1 empty and v2 ZIP version separation', () => {
+  for (const change of [
+    a => { a.transport = 'zip'; }, a => { a.archive = 'zip'; }, a => { a.sha256 = a.treeDigest; },
+    a => { a.url = a.sources['config.json']; }, a => { a.modelBindings = {}; }, a => { a.extra = true; },
+    a => { a.bytes++; }, a => { a.bytes = 0; }, a => { a.bytes = Number.MAX_SAFE_INTEGER + 1; },
+    a => { a.files[0].bytes = -1; }, a => { a.files[0].bytes = 1.5; },
+    a => { a.files[0].sha256 = 'A'.repeat(64); }, a => { a.treeDigest = hash('wrong'); },
+    a => { a.entrypoint = 'missing.bin'; }, a => { a.files[0].path = '../config.json'; },
+    a => { a.files[1].path = 'CONFIG.json'; }, a => { a.files[0].unknown = true; },
+    a => { delete a.sources['config.json']; }, a => { a.sources['other.bin'] = a.sources['config.json']; },
+    a => { a.provenance.sourceRevision = 'model-files-v1.1'; }, a => { a.provenance.license.extra = true; },
+  ]) {
+    const a = rawArtifact(); change(a); assert.throws(() => parseArtifact(a, 'model', 3));
+  }
+  const m = rawManifest();
+  assert.throws(() => parseModelManifest({...m, schemaVersion: 2}));
+  assert.throws(() => parseArtifact(rawArtifact(), 'model'));
+  assert.throws(() => parseArtifact(rawArtifact(), 'runtime', 3));
+  const zip = artifact(); delete zip.modelBindings;
+  m.models['tiny-raw-model'].artifacts['darwin-arm64'] = zip;
+  assert.throws(() => parseModelManifest(m));
+  assert.deepEqual(parseArtifact(zip, 'model'), zip);
+  for (const schemaVersion of [1, 2, 3]) assert.deepEqual(parseModelManifest({schemaVersion, release: 'fixture', models: {}}).models, {});
+});
+
+const good = () => ({schemaVersion: 2, release: '0.2.0-beta.1', artifacts: {
+  'darwin-arm64': artifact(), 'win32-x64-cpu': artifact(),
 }});
 
 test('accepts trusted manifest and selects known artifact', () => {
   const manifest = parseRuntimeManifest(good());
-  assert.equal(selectRuntimeArtifact(manifest, 'darwin', 'arm64').bytes, 42);
-  assert.equal(selectRuntimeArtifact(manifest, 'win32', 'x64', 'cpu').bytes, 43);
-  assert.equal(selectRuntimeArtifact(manifest, 'win32', 'x64').entrypoint, 'voice-runtime.exe');
+  assert.equal(selectRuntimeArtifact(manifest, 'darwin', 'arm64').bytes, 20);
 });
 
 for (const [name, mutate] of [
-  ['unknown schema', m => { m.schemaVersion = 2; }],
+  ['unknown schema', m => { m.schemaVersion = 3; }],
   ['http URL', m => { m.artifacts['darwin-arm64'].url = 'http://github.com/a/b/releases/download/v/a.zip'; }],
   ['untrusted host', m => { m.artifacts['darwin-arm64'].url = 'https://evil.example/a.zip'; }],
   ['bad hash', m => { m.artifacts['darwin-arm64'].sha256 = 'A'.repeat(64); }],
@@ -32,232 +211,49 @@ for (const [name, mutate] of [
 
 test('rejects selection of an unknown runtime platform', () => assert.throws(() => selectRuntimeArtifact(parseRuntimeManifest(good()), 'linux', 'x64')));
 
-test('clean repo packaging check refuses build when dist/voice-runtime is missing', async () => {
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  const emptyTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clean-repo-test-'));
-  try {
-    assert.throws(() => checkMacOsRuntime(emptyTempDir), /MISSING_EMBEDDED_RUNTIME/);
-  } finally {
-    fs.rmSync(emptyTempDir, { recursive: true, force: true });
+test('v2 trust policy preserves empty unavailable states and rejects nonempty legacy', () => {
+  const {url, sha256, bytes, archive, entrypoint} = artifact();
+  assert.throws(() => parseRuntimeManifest({schemaVersion: 1, release: 'test', artifacts: {'win32-x64-cpu': {url, sha256, bytes, archive, entrypoint}}}), /LEGACY/);
+  for (const schemaVersion of [1, 2]) assert.deepEqual(parseRuntimeManifest({schemaVersion, release: 'test', artifacts: {}}).artifacts, {});
+  const result = parseRuntimeManifest(good());
+  assert.ok(Object.isFrozen(result.artifacts['darwin-arm64'].files[0]));
+  assert.ok(Object.isFrozen(result.artifacts['darwin-arm64'].modelBindings.sttRoot));
+});
+
+test('v2 parser enforces exact artifact inventory provenance binding fields and bounds', () => {
+  assert.equal(typeof parseArtifact, 'function');
+  for (const mutate of [
+    a => { delete a.files; }, a => { a.files = []; }, a => { a.extra = true; },
+    a => { a.treeDigest = hash('wrong'); }, a => { a.entrypoint = 'missing.exe'; },
+    a => { a.bytes = ASSET_LIMITS.maxTotalBytes+1; }, a => { a.provenance.sourceRevision = 'main'; },
+    a => { a.provenance.sourceUrl = 'http://example.test/x'; }, a => { a.provenance.extra = 1; },
+    a => { a.provenance.license.extra = 1; }, a => { a.provenance.license.spdx = ''; },
+    a => { a.provenance.license.url = 'https://user:pass@example.test/x'; },
+    a => { delete a.modelBindings; }, a => { a.modelBindings.sttRoot.path = 'x'; },
+    a => { a.modelBindings.onnxModel.path = '../escape'; }, a => { a.modelBindings.extra = {}; },
+    a => { a.modelBindings.sttRoot.modelId = 'BAD ID'; }, a => { a.modelBindings.sttRoot.archiveSha256 = 'A'.repeat(64); },
+    a => { a.files[0].extra = 1; }, a => { a.url += 'x'.repeat(2048); },
+  ]) { const a = artifact(); mutate(a); assert.throws(() => parseArtifact(a, 'runtime')); }
+  assert.throws(() => parseArtifact(artifact(), 'unknown'));
+  for (const release of ['../bad', 'CON', 'bad.', 'x'.repeat(101)]) assert.throws(() => parseRuntimeManifest({...good(), release}));
+  assert.throws(() => parseRuntimeManifest({...good(), extra: true}));
+  assert.throws(() => parseRuntimeManifest({...good(), release: 'x'.repeat(ASSET_LIMITS.maxMetadataBytes)}), /LIMIT/);
+});
+
+test('model artifact kind is inventory-only and cannot require or carry runtime bindings', () => {
+  assert.equal(typeof parseModelManifest, 'function');
+  const a = artifact(); delete a.modelBindings;
+  const m = {schemaVersion: 2, release: 'fixture', models: {'kokoro-onnx': {
+    name: 'Tiny model fixture', purpose: 'tts', license: {spdx: 'MIT', url: 'https://example.test/license'}, artifacts: {'win32-x64-cpu': a}}}};
+  const parsed = parseModelManifest(m);
+  assert.equal(parsed.models['kokoro-onnx'].artifacts['win32-x64-cpu'].entrypoint, 'bin/runtime.exe');
+  assert.ok(!Object.hasOwn(parseArtifact(a, 'model'), 'modelBindings'));
+  assert.throws(() => parseArtifact(a, 'runtime'));
+  assert.throws(() => parseArtifact(artifact(), 'model'));
+  assert.throws(() => parseModelManifest({...m, schemaVersion: 1}), /LEGACY/);
+  for (const schemaVersion of [1, 2]) assert.deepEqual(parseModelManifest({schemaVersion, release: 'test', models: {}}).models, {});
+  for (const mutate of [x => { x.extra = 1; }, x => { x.models['kokoro-onnx'].extra = 1; },
+    x => { x.models['kokoro-onnx'].license.extra = 1; }, x => { x.models.CON = x.models['kokoro-onnx']; }]) {
+    const x = structuredClone(m); mutate(x); assert.throws(() => parseModelManifest(x));
   }
-});
-
-function bindTreeMetadata(metadata) {
-  const sortedFiles = Object.fromEntries(Object.entries(metadata.files).sort(([a], [b]) => a.localeCompare(b)));
-  metadata.files = sortedFiles;
-  metadata.fileCount = Object.keys(sortedFiles).length;
-  const frame = Object.entries(sortedFiles)
-    .map(([relative, entry]) => `${relative}\0${entry.bytes}\0${entry.sha256}\n`)
-    .join('');
-  metadata.treeSha256 = crypto.createHash('sha256').update(frame).digest('hex');
-  return metadata;
-}
-
-async function makeRuntimeFixture() {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mac-runtime-check-'));
-  const runtimeDir = path.join(root, 'dist', 'voice-runtime');
-  await fsp.mkdir(runtimeDir, { recursive: true });
-  const binary = Buffer.from('verified macOS runtime');
-  const binaryPath = path.join(runtimeDir, 'voice-runtime');
-  await fsp.writeFile(binaryPath, binary, { mode: 0o755 });
-  await fsp.chmod(binaryPath, 0o755);
-  const metallib = Buffer.from('verified mlx metal library');
-  const metallibPaths = [
-    '_internal/mlx/lib/mlx.metallib',
-    '_internal/mlx.metallib',
-    '_internal/default.metallib',
-  ];
-  for (const relativePath of metallibPaths) {
-    await fsp.mkdir(path.dirname(path.join(runtimeDir, relativePath)), { recursive: true });
-    await fsp.writeFile(path.join(runtimeDir, relativePath), metallib);
-  }
-  const metallibEntry = {
-    bytes: metallib.length,
-    sha256: crypto.createHash('sha256').update(metallib).digest('hex'),
-  };
-  const metadata = {
-    schemaVersion: 1,
-    platform: 'darwin-arm64',
-    entrypoint: 'voice-runtime',
-    bytes: binary.length,
-    sha256: crypto.createHash('sha256').update(binary).digest('hex'),
-    files: {
-      'voice-runtime': { bytes: binary.length, sha256: crypto.createHash('sha256').update(binary).digest('hex') },
-      ...Object.fromEntries(metallibPaths.map(relativePath => [relativePath, metallibEntry])),
-    },
-  };
-  bindTreeMetadata(metadata);
-  await fsp.writeFile(path.join(runtimeDir, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`);
-  return { root, runtimeDir, binaryPath, metadata };
-}
-
-test('macOS runtime preflight rejects a complete manifest that omits the entire MLX output directory', async t => {
-  const fixture = await makeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  await fsp.rm(path.join(fixture.runtimeDir, '_internal'), { recursive: true, force: true });
-  for (const relativePath of Object.keys(fixture.metadata.files)) {
-    if (relativePath.startsWith('_internal/')) delete fixture.metadata.files[relativePath];
-  }
-  bindTreeMetadata(fixture.metadata);
-  await fsp.writeFile(path.join(fixture.runtimeDir, 'metadata.json'), JSON.stringify(fixture.metadata));
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  assert.throws(() => checkMacOsRuntime(fixture.root), /MISSING_REQUIRED_RUNTIME_FILE/);
-});
-
-test('macOS runtime preflight validates metadata, size, hash and executable entrypoint', async t => {
-  const fixture = await makeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  const result = checkMacOsRuntime(fixture.root);
-  assert.equal(result.platform, 'darwin-arm64');
-  assert.equal(result.bytes, fixture.metadata.bytes);
-  assert.equal(result.sha256, fixture.metadata.sha256);
-  assert.equal(result.entrypoint, fixture.binaryPath);
-});
-
-for (const [name, mutate, expected] of [
-  ['invalid metadata JSON', async f => fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), '{'), /INVALID_RUNTIME_METADATA/],
-  ['wrong platform', async f => { f.metadata.platform = 'win32-x64'; await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /RUNTIME_PLATFORM_MISMATCH/],
-  ['size mismatch', async f => { f.metadata.bytes += 1; await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /RUNTIME_SIZE_MISMATCH/],
-  ['hash mismatch', async f => { f.metadata.sha256 = '0'.repeat(64); await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /RUNTIME_HASH_MISMATCH/],
-  ['non-executable entrypoint', async f => fsp.chmod(f.binaryPath, 0o644), /RUNTIME_NOT_EXECUTABLE/],
-  ['entrypoint traversal', async f => { f.metadata.entrypoint = '../escape'; await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /INVALID_RUNTIME_ENTRYPOINT/],
-  ['missing metadata.files', async f => { delete f.metadata.files; await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /MISSING_RUNTIME_TREE_MANIFEST/],
-  ['null metadata.files', async f => { f.metadata.files = null; await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /MISSING_RUNTIME_TREE_MANIFEST/],
-  ['empty metadata.files', async f => { f.metadata.files = {}; await fsp.writeFile(path.join(f.runtimeDir, 'metadata.json'), JSON.stringify(f.metadata)); }, /MISSING_RUNTIME_TREE_MANIFEST/],
-]) {
-  test(`macOS runtime preflight rejects ${name}`, async t => {
-    if (process.platform === 'win32' && name === 'non-executable entrypoint') {
-      t.skip('Windows does not enforce POSIX executable mode bits');
-      return;
-    }
-    const fixture = await makeRuntimeFixture();
-    t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-    await mutate(fixture);
-    const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-    assert.throws(() => checkMacOsRuntime(fixture.root), expected);
-  });
-}
-
-test('macOS runtime preflight rejects a symlinked parent directory escaping runtime root', async t => {
-  if (process.platform === 'win32') {
-    t.skip('Windows symlink creation requires an optional OS privilege');
-    return;
-  }
-  const fixture = await makeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  const outside = path.join(fixture.root, 'outside');
-  await fsp.mkdir(outside);
-  const escaped = Buffer.from('outside executable');
-  const escapedPath = path.join(outside, 'voice-runtime');
-  await fsp.writeFile(escapedPath, escaped, { mode: 0o755 });
-  await fsp.chmod(escapedPath, 0o755);
-  await fsp.symlink(path.relative(fixture.runtimeDir, outside), path.join(fixture.runtimeDir, 'bin'));
-  fixture.metadata.entrypoint = 'bin/voice-runtime';
-  fixture.metadata.bytes = escaped.length;
-  fixture.metadata.sha256 = crypto.createHash('sha256').update(escaped).digest('hex');
-  await fsp.writeFile(path.join(fixture.runtimeDir, 'metadata.json'), JSON.stringify(fixture.metadata));
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  assert.throws(() => checkMacOsRuntime(fixture.root), /INVALID_RUNTIME_ENTRYPOINT/);
-});
-
-async function makeTreeRuntimeFixture() {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mac-tree-runtime-check-'));
-  const runtimeDir = path.join(root, 'dist', 'voice-runtime');
-  await fsp.mkdir(path.join(runtimeDir, '_internal', 'site-packages'), { recursive: true });
-
-  const launcher = Buffer.from('launcher binary content');
-  const launcherPath = path.join(runtimeDir, 'voice-runtime');
-  await fsp.writeFile(launcherPath, launcher, { mode: 0o755 });
-  await fsp.chmod(launcherPath, 0o755);
-
-  const internalLib = Buffer.from('internal lib dylib content');
-  const internalLibPath = path.join(runtimeDir, '_internal', 'libcore.dylib');
-  await fsp.writeFile(internalLibPath, internalLib, { mode: 0o644 });
-
-  const pyc = Buffer.from('compiled pyc bytecode');
-  const pycPath = path.join(runtimeDir, '_internal', 'site-packages', 'module.pyc');
-  await fsp.writeFile(pycPath, pyc, { mode: 0o644 });
-
-  const metallib = Buffer.from('tree fixture metallib');
-  const metallibPaths = [
-    '_internal/mlx/lib/mlx.metallib',
-    '_internal/mlx.metallib',
-    '_internal/default.metallib',
-  ];
-  for (const relativePath of metallibPaths) {
-    await fsp.mkdir(path.dirname(path.join(runtimeDir, relativePath)), { recursive: true });
-    await fsp.writeFile(path.join(runtimeDir, relativePath), metallib);
-  }
-
-  const files = {
-    'voice-runtime': { bytes: launcher.length, sha256: crypto.createHash('sha256').update(launcher).digest('hex') },
-    '_internal/libcore.dylib': { bytes: internalLib.length, sha256: crypto.createHash('sha256').update(internalLib).digest('hex') },
-    '_internal/site-packages/module.pyc': { bytes: pyc.length, sha256: crypto.createHash('sha256').update(pyc).digest('hex') },
-    ...Object.fromEntries(metallibPaths.map(relativePath => [relativePath, {
-      bytes: metallib.length,
-      sha256: crypto.createHash('sha256').update(metallib).digest('hex'),
-    }])),
-  };
-
-  const metadata = {
-    schemaVersion: 1,
-    platform: 'darwin-arm64',
-    entrypoint: 'voice-runtime',
-    bytes: launcher.length,
-    sha256: crypto.createHash('sha256').update(launcher).digest('hex'),
-    files,
-  };
-  bindTreeMetadata(metadata);
-  await fsp.writeFile(path.join(runtimeDir, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`);
-
-  return { root, runtimeDir, launcherPath, internalLibPath, pycPath, metadata };
-}
-
-test('macOS runtime tree preflight passes with valid onedir tree manifest', async t => {
-  const fixture = await makeTreeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  const result = checkMacOsRuntime(fixture.root);
-  assert.equal(result.fileCount, 6);
-  assert.equal(result.platform, 'darwin-arm64');
-});
-
-test('macOS runtime tree preflight rejects tampered _internal file', async t => {
-  const fixture = await makeTreeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  // Write different content of the exact same length to trigger hash mismatch
-  const tampered = Buffer.alloc(26, 0x42);
-  await fsp.writeFile(fixture.internalLibPath, tampered);
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  assert.throws(() => checkMacOsRuntime(fixture.root), /RUNTIME_HASH_MISMATCH/);
-});
-
-test('macOS runtime tree preflight rejects deleted _internal file', async t => {
-  const fixture = await makeTreeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  await fsp.unlink(fixture.pycPath);
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  assert.throws(() => checkMacOsRuntime(fixture.root), /MISSING_RUNTIME_FILE/);
-});
-
-test('macOS runtime tree preflight rejects unlisted file on disk', async t => {
-  const fixture = await makeTreeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  await fsp.writeFile(path.join(fixture.runtimeDir, '_internal', 'injected_trojan.py'), 'print("pwned")');
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  assert.throws(() => checkMacOsRuntime(fixture.root), /UNLISTED_RUNTIME_FILE/);
-});
-
-test('macOS runtime tree preflight rejects symlink in _internal tree', async t => {
-  if (process.platform === 'win32') {
-    t.skip('Windows symlink creation requires an optional OS privilege');
-    return;
-  }
-  const fixture = await makeTreeRuntimeFixture();
-  t.after(() => fsp.rm(fixture.root, { recursive: true, force: true }));
-  await fsp.unlink(fixture.pycPath);
-  await fsp.symlink('/etc/passwd', fixture.pycPath);
-  const { checkMacOsRuntime } = await import('../scripts/check-macos-runtime.mjs');
-  assert.throws(() => checkMacOsRuntime(fixture.root), /INVALID_RUNTIME_FILE_TYPE/);
 });

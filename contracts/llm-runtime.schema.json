@@ -24,6 +24,7 @@
               "openai-compatible",
               "chatgpt-subscription",
               "grok-subscription",
+              "claude-subscription",
               "apple-foundation-models"
             ],
             "maxLength": 64
@@ -39,6 +40,7 @@
               "api-key-or-none",
               "chatgpt-subscription",
               "grok-subscription",
+              "claude-subscription",
               "none"
             ]
           }

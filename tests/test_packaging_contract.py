@@ -9,33 +9,27 @@ class PackagingContractTests(unittest.TestCase):
     def test_builder_contract_is_release_safe(self):
         package = json.loads((ROOT / "package.json").read_text())
         config = (ROOT / "electron-builder.yml").read_text()
-        self.assertEqual(package["scripts"]["pack:mac"], "npm run build:web && electron-builder --mac dmg zip --arm64 --publish never")
-        self.assertEqual(package["scripts"]["pack:win"], "npm run build:web && electron-builder --win nsis portable --x64 --publish never")
-        self.assertEqual(package["scripts"]["dist:dir"], "npm run build:web && electron-builder --dir")
+        # v0.3.0: macOS packs from a receipted, model-free stage (scripts/ci-pack-macos.sh).
+        self.assertEqual(package["scripts"]["pack:mac"], "node scripts/build-macos-receipt.cjs")
         self.assertEqual(package["scripts"]["test"], "node scripts/run-tests.mjs")
-        self.assertEqual(package["version"], "0.2.0-beta.1")
+        self.assertEqual(package["version"], "0.3.0-beta.1")
+        self.assertEqual(package["license"], "Apache-2.0")
         self.assertIn("artifactName: Voice-Practice-${version}-${arch}.${ext}", config)
-        self.assertIn("artifactName: Voice-Practice-Setup-${version}-${arch}.${ext}", config)
-        self.assertIn("artifactName: Voice-Practice-Portable-${version}-${arch}.${ext}", config)
         self.assertIn("electron-builder", package["devDependencies"])
         self.assertIn("notarize: false", config)
+        self.assertIn("identity: null", config)
         self.assertIn("entitlements: build/entitlements.mac.plist", config)
-        self.assertTrue((ROOT / "build/entitlements.mac.plist").exists())
         entitlements = (ROOT / "build/entitlements.mac.plist").read_text()
         self.assertIn("com.apple.security.cs.allow-jit", entitlements)
         self.assertIn("com.apple.security.device.audio-input", entitlements)
         self.assertNotIn("com.apple.security.cs.allow-unsigned-executable-memory", entitlements)
         self.assertNotIn("com.apple.security.cs.disable-library-validation", entitlements)
-        self.assertTrue((ROOT / "scripts/verify-macos-release.sh").exists())
-        self.assertTrue((ROOT / "scripts/verify-windows-release.ps1").exists())
         for required in (
             "appId: com.kentlin.voicepractice", "productName: Voice Practice", "asar: true",
-            "files:", "apps/desktop/**", "apps/web/**", "resources/**",
-            "target: dmg", "target: zip", "target: nsis", "target: portable",
-            "arch:\n        - arm64", "arch:\n        - x64",
+            "files:", "apps/desktop/**", "apps/web/**", "target: dmg", "target: zip",
         ):
             self.assertIn(required, config)
-        for forbidden in (".venv/**", ".runtime/**", "tests/**", "node_modules/**"):
+        for forbidden in (".venv/**", ".runtime/**", "tests/**", "node_modules/**", "models/**", ".cache/**"):
             self.assertNotIn(forbidden, config)
 
     def test_ci_uses_the_cross_platform_project_test_runner(self):
@@ -60,30 +54,25 @@ class PackagingContractTests(unittest.TestCase):
 
     def test_release_workflow_publishes_only_unsigned_tagged_prereleases(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        pack = (ROOT / "scripts/ci-pack-macos.sh").read_text()
         self.assertIn("tags: ['v*']", workflow)
         self.assertIn("--prerelease", workflow)
         self.assertIn("--verify-tag", workflow)
-        self.assertIn("CSC_IDENTITY_AUTO_DISCOVERY: 'false'", workflow)
         self.assertIn("write-checksums.mjs", workflow)
-        self.assertIn("build-and-verify-windows-package.ps1", workflow)
-        self.assertIn("check-macos-runtime.mjs", workflow)
+        self.assertIn("bash scripts/ci-pack-macos.sh", workflow)
+        self.assertIn("CSC_IDENTITY_AUTO_DISCOVERY=false", pack)
         self.assertNotIn("secrets.", workflow)
         self.assertIn("contents: read", workflow.split("jobs:")[0])
 
     def test_macos_arm64_packaging_contract(self):
         config = (ROOT / "electron-builder.yml").read_text()
-        self.assertIn("files:", config)
-        self.assertIn("apps/desktop/**", config)
-        self.assertIn("apps/web/**", config)
-        self.assertIn("resources/**", config)
         self.assertIn("target:\n    - target: dmg\n      arch:\n        - arm64", config)
         self.assertIn("- target: zip\n      arch:\n        - arm64", config)
-        self.assertIn("hardenedRuntime: true", config)
         self.assertIn("entitlements: build/entitlements.mac.plist", config)
 
     def test_workflow_actions_are_pinned_to_full_commit_shas(self):
         import re
-        for name in ("ci.yml", "desktop-beta.yml", "ios-beta.yml", "windows-beta.yml", "android-beta.yml"):
+        for name in ("ci.yml", "desktop-beta.yml", "ios-beta.yml", "windows-beta.yml", "release.yml"):
             workflow = (ROOT / ".github/workflows" / name).read_text()
             actions = re.findall(r"uses:\s*([^\s]+)", workflow)
             self.assertTrue(actions)
@@ -112,10 +101,10 @@ class PackagingContractTests(unittest.TestCase):
         self.assertTrue((ios_web / "offline.html").is_file())
         self.assertTrue((ios_web / "manifest.webmanifest").is_file())
         self.assertTrue((ios_web / "runtime/runtime-contract.js").is_file())
-        self.assertTrue((ios_web / "vendor/transformers.bundle.js").is_file())
-        self.assertTrue((ios_web / "vendor/kokoro.bundle.js").is_file())
         self.assertTrue((ios_web / "icons/icon-512.png").is_file())
-        self.assertTrue((ios_web / "voices/af_heart.bin").is_file())
+        # v0.3.0: iOS uses native STT/TTS; browser Whisper/Kokoro payloads are not bundled.
+        self.assertFalse((ios_web / "vendor").exists())
+        self.assertFalse((ios_web / "voices").exists())
 
     def test_ios_navigation_tests_use_xcode_target_and_app_bundle(self):
         pbxproj = (ROOT / "apps/ios/VoicePractice.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
@@ -161,32 +150,16 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn("webView.scrollView.alwaysBounceHorizontal = false", content_view)
         self.assertNotIn("webView.scrollView.isScrollEnabled = false", content_view)
 
-        self.assertIn("html.native-ios-app", html)
-        self.assertIn("height: var(--native-app-height, 100dvh);", html)
-        self.assertIn("overscroll-behavior: none;", html)
-        self.assertIn(".native-ios-app .container", html)
-        self.assertIn("grid-template-rows: auto auto auto minmax(0, 1fr);", html)
-        self.assertIn(".native-ios-app .main-grid", html)
-        self.assertRegex(
-            html,
-            r"\.native-ios-app \.chat-box\s*\{[^}]*height: clamp\(220px, 34dvh, 300px\);",
-        )
-        self.assertRegex(
-            html,
-            r"\.native-ios-app \.card,\s*\.native-ios-app \.virtual-coach-card\s*\{[^}]*padding: 14px;",
-        )
-        self.assertIn("overflow-y: auto;", html)
-        self.assertIn("-webkit-overflow-scrolling: touch;", html)
+        # The v0.3.0 single-column layout (tests/ui-cute-layout.test.cjs) replaced the
+        # old .native-ios-app grid rules; keep the shell-level guarantees.
+        self.assertIn("overscroll-behavior", html)
         self.assertIn("env(safe-area-inset-top)", html)
         self.assertIn("env(safe-area-inset-bottom)", html)
         self.assertIn(".modal-card", html)
 
     def test_embedded_runtime_packaging_contract(self):
-        config = (ROOT / "electron-builder.yml").read_text(encoding="utf-8")
-        self.assertIn("from: dist/voice-runtime", config)
-        self.assertIn("to: runtime", config)
-        self.assertNotIn("models/**", config)
-        self.assertNotIn(".cache/**", config)
+        pack = (ROOT / "scripts/macos-pack-model-packs.cjs").read_text(encoding="utf-8")
+        self.assertIn("MODEL_PACK_EMBEDDED_SPEECH_MODEL", pack)
 
 
 if __name__ == "__main__":

@@ -29,18 +29,8 @@ def _module_available(module_name: str) -> bool:
         return False
 
 
-def _local_asset_available(variable: str) -> bool:
-    value = os.environ.get(variable)
-    return bool(value and Path(value).exists())
-
-
-def _offline_requested() -> bool:
-    return os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
-
-
 def detect_availability() -> dict[str, bool]:
     """Check import metadata and required local assets; never initialize a model."""
-    offline = _offline_requested()
     onnx_model = os.environ.get("VOICE_KOKORO_ONNX_MODEL")
     onnx_voices = os.environ.get("VOICE_KOKORO_ONNX_VOICES")
     onnx_assets_ready = bool(
@@ -48,18 +38,13 @@ def detect_availability() -> dict[str, bool]:
         and Path(onnx_model).is_file()
         and Path(onnx_voices).is_file()
     )
+    private_vendor = _module_available("voice_practice_speech_vendor")
     return {
-        "mlx-whisper": _module_available("mlx_whisper") and (
-            not offline or _local_asset_available("VOICE_MLX_WHISPER_MODEL")
-        ),
-        "faster-whisper": _module_available("faster_whisper") and (
-            not offline or _local_asset_available("VOICE_FASTER_WHISPER_MODEL")
-        ),
-        "kokoro-python": _module_available("kokoro") and _module_available("numpy") and (
-            not offline or _local_asset_available("VOICE_KOKORO_MODEL")
-        ),
+        "mlx-whisper": _module_available("mlx_whisper"),
+        "faster-whisper": private_vendor,
+        "kokoro-python": _module_available("kokoro") and _module_available("numpy"),
         "kokoro-onnx": (
-            _module_available("kokoro_onnx")
+            private_vendor
             and _module_available("numpy")
             and onnx_assets_ready
         ),
@@ -126,6 +111,7 @@ class BackendRegistry:
         self._tts: TTSBackend | Any | None = None
         self._stt_failure: RuntimeError | None = None
         self._tts_failure: RuntimeError | None = None
+        self._tts_provider_reader = None
 
     def _is_compatible(self, backend_id: str) -> bool:
         if backend_id == "mlx-whisper":
@@ -163,6 +149,7 @@ class BackendRegistry:
                 "selectedTts": "fake",
                 "ready": True,
                 "degradedReason": None,
+                "executionProvider": None,
             }
         available_stt = [
             item for item in STT_IDS
@@ -173,19 +160,38 @@ class BackendRegistry:
             if self._is_compatible(item) and self._availability.get(item, False)
         ]
         ready = self.selected_stt is not None and self.selected_tts is not None
-        tts_provider = None
-        if self.selected_tts == "kokoro-onnx":
-            if self._tts is not None and hasattr(self._tts, "execution_provider"):
-                tts_provider = self._tts.execution_provider
         return {
             "sttBackends": available_stt,
             "ttsBackends": available_tts,
             "selectedStt": self.selected_stt,
             "selectedTts": self.selected_tts,
-            "executionProvider": tts_provider,
             "ready": ready,
             "degradedReason": None if ready else "BACKEND_UNAVAILABLE",
+            "executionProvider": self._execution_provider(),
         }
+
+    def _execution_provider(self) -> str | None:
+        """Observe only the loaded owner's cached history, never import or load."""
+        if self.selected_tts != "kokoro-onnx" or self._tts_failure is not None:
+            return None
+        if self._tts_provider_reader is None:
+            return None
+        owner, reader = self._tts_provider_reader
+        if owner is not self._tts:
+            return None
+        evidence = reader(owner)
+        sessions = {"CPUExecutionProvider": ["CPUExecutionProvider"],
+                    "CUDAExecutionProvider": ["CUDAExecutionProvider", "CPUExecutionProvider"]}
+        if type(evidence) is not dict:
+            return None
+        provider = evidence.get("executionProvider")
+        if (provider in sessions
+                and evidence.get("requested") == provider
+                and evidence.get("sessionProviders") == sessions[provider]
+                and evidence.get("modelLoaded") is True
+                and evidence.get("inferenceSucceeded") is True):
+            return provider
+        return None
 
     def _get_stt(self):
         if self._stt_failure is not None:
@@ -214,6 +220,12 @@ class BackendRegistry:
             try:
                 factory_id = "fake-tts" if self.selected_tts == "fake" else self.selected_tts
                 self._tts = self._factories[factory_id]()
+                if factory_id == "kokoro-onnx":
+                    # Capture the known class reader at creation, not from a foreign
+                    # factory's lookalike provider_evidence or during health reads.
+                    from .backends.kokoro_onnx import KokoroOnnxBackend
+                    if type(self._tts) is KokoroOnnxBackend:
+                        self._tts_provider_reader = (self._tts, KokoroOnnxBackend.provider_evidence)
             except Exception as error:
                 public_error = BackendUnavailableError("tts", self.selected_tts, "initialization failed")
                 if self.selected_tts:
