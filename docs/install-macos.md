@@ -1,10 +1,10 @@
 # Install on macOS (Apple Silicon beta)
 
-OpenCoach v0.3.0-beta.1 is an unsigned engineering pre-release for Apple Silicon Macs (arm64), macOS 13 or later.
+OpenCoach v0.3.0-beta.2 is an unsigned engineering pre-release for Apple Silicon Macs (arm64), macOS 13 or later.
 
 ## Download and verify
 
-1. From the GitHub release, download `Voice-Practice-0.3.0-beta.1-arm64.dmg` (or the `.zip`) and `SHA256SUMS.txt`.
+1. From the GitHub release, download `Voice-Practice-0.3.0-beta.2-arm64.dmg` (or the `.zip`) and `SHA256SUMS.txt`.
 2. Verify the checksum before opening:
    ```bash
    shasum -a 256 -c SHA256SUMS.txt --ignore-missing

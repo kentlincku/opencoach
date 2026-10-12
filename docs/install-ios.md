@@ -33,7 +33,7 @@ OpenCoach iOS 使用原生 SwiftUI 搭配內建 Web UI，由 Swift 原生網路�
 
 ### TestFlight／App Store
 
-目前沒有 TestFlight 邀請，也沒有上架 App Store；v0.3.0-beta.1 的 iOS 只提供原始碼，請照上面步驟自行建置。
+目前沒有 TestFlight 邀請，也沒有上架 App Store；v0.3.0-beta.2 的 iOS 只提供原始碼，請照上面步驟自行建置。
 
 ## 區域網路模型連線
 
