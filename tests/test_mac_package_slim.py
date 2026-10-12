@@ -91,7 +91,8 @@ class PackagingPolicyTests(unittest.TestCase):
         config = (ROOT / 'electron-builder.yml').read_text()
         block = re.search(r'^electronLanguages:\n((?:  - .*\n)+)', config, re.M)
         self.assertIsNotNone(block, 'electronLanguages must be set at the top level')
-        self.assertEqual(sorted(re.findall(r'- (\S+)', block.group(1))), ['en', 'zh_TW'])
+        # macOS .lproj names (en, zh_TW) plus Windows locales/*.pak names (en-US, zh-TW).
+        self.assertEqual(sorted(re.findall(r'- (\S+)', block.group(1))), ['en', 'en-US', 'zh-TW', 'zh_TW'])
 
 
 if __name__ == '__main__':
