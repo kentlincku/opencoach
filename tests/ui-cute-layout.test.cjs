@@ -66,7 +66,7 @@ test('lesson practice info (title, back, complete) lives inside the coach card',
 test('single-column shell: top bar holds tabs, short status and settings; no side grid', () => {
   assert.doesNotMatch(BODY, /class="main-grid"/);
   const top = elementSource('appTopbar');
-  assert.match(top, /Voice Practice/);
+  assert.match(top, /OpenCoach/);
   assert.match(top, /id="tabBtnFree"/);
   assert.match(top, /id="tabBtnLesson"/);
   assert.match(top, /id="headerConnBadge"/);
