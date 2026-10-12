@@ -579,7 +579,7 @@ test('D real B model cancellation before versus after commit preserves installed
   assert.equal((await h.invoke('models:cancel',{modelId:'fixture-model'})).cancelled,true);held.resolve();
   const [result]=await observed;
   if(committed){assert.equal(result.status,'fulfilled');assert.equal(result.value.state,'installed');assert.equal(result.value.restartRequired,true);assert.match(h.menu('asset-status').label,/重新啟動/);}
-  else {assert.equal(result.status,'rejected');assert.match(result.reason.message,/INSTALL_CANCELLED/);}
+  else {assert.equal(result.status,'fulfilled');assert.equal(result.value.cancelled,true,'a user cancel is not reported as a failure');}
   assert.equal((await h.models.status('fixture-model')).state,committed?'installed':'unavailable');
   assert.equal(h.children.length,0);assert.equal(h.models.coordinator.snapshot().pins,0);await h.quit();
  }
