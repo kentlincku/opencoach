@@ -12,7 +12,7 @@ class PackagingContractTests(unittest.TestCase):
         # v0.3.0: macOS packs from a receipted, model-free stage (scripts/ci-pack-macos.sh).
         self.assertEqual(package["scripts"]["pack:mac"], "node scripts/build-macos-receipt.cjs")
         self.assertEqual(package["scripts"]["test"], "node scripts/run-tests.mjs")
-        self.assertEqual(package["version"], "0.3.0-beta.1")
+        self.assertEqual(package["version"], "0.3.0-beta.2")
         self.assertEqual(package["license"], "Apache-2.0")
         self.assertIn("artifactName: Voice-Practice-${version}-${arch}.${ext}", config)
         self.assertIn("electron-builder", package["devDependencies"])

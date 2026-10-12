@@ -4,6 +4,18 @@ All notable public changes to OpenCoach are documented here.
 
 ## [Unreleased]
 
+## [0.3.0-beta.2] - 2026-10-12
+
+macOS (Apple Silicon) release. Same features as 0.3.0-beta.1.
+
+### Fixed
+
+- The window title and header show **OpenCoach** again (0.3.0-beta.1 showed the working name "Voice Practice"); a test now guards the brand.
+
+### Changed
+
+- README screenshots updated for 0.3 (conversation with shadowing, speech models, coach editor, lessons).
+
 ## [0.3.0-beta.1] - 2026-10-09
 
 macOS (Apple Silicon) release; Windows stays on v0.2.0-beta.1 and iOS is source-only.

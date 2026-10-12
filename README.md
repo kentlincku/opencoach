@@ -29,7 +29,7 @@ The same web interface runs in the browser, in the macOS/Windows desktop App, an
 
 | Platform | Current version | How |
 |---|---|---|
-| macOS (Apple Silicon, macOS 13+) | **v0.3.0-beta.1** | Download the DMG from [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-macos.md) |
+| macOS (Apple Silicon, macOS 13+) | **v0.3.0-beta.2** | Download the DMG from [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-macos.md) |
 | iOS / iPadOS 17+ | source only | Build and install with Xcode → [install guide](docs/install-ios.md) |
 | Windows x64 | v0.2.0-beta.1 | Previous release on [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-windows.md); not yet updated to 0.3 |
 | Browser | — | Run from source (`npm run start:web`), see [Development](#development) |

@@ -1,6 +1,6 @@
 {
   "name": "voice-practice-unified",
-  "version": "0.3.0-beta.1",
+  "version": "0.3.0-beta.2",
   "private": true,
   "description": "Local-first cross-platform voice practice with one shared web UI, a macOS desktop runtime, and an iOS app.",
   "author": "kentlin",

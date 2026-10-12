@@ -1,5 +1,5 @@
 name: Windows verification
-# v0.3.0-beta.1 ships macOS only. Windows packaging moved to the model-pack pipeline
+# v0.3 ships macOS only. Windows packaging moved to the model-pack pipeline
 # (scripts/win-*), which has not been verified on hosted runners yet; this job keeps the
 # test suite and syntax checks green on Windows until the Windows release is reworked.
 on:
