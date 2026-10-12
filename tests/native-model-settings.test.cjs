@@ -763,3 +763,25 @@ test('an invalid preference is shown as an alert and not as a default selection'
   const alert = all(root).find(n => n.getAttribute?.('role') === 'alert' && n.textContent.includes('STT_PREFERENCE_INVALID'));
   assert.ok(alert, root.textContent);
 });
+
+test('download progress re-renders keep opened details open and put progress on its own row line', async t => {
+  const reads = [
+    overview({ installation: installation({ bytes: 128 * 1024 ** 2 }) }),
+    overview({ installation: installation({ bytes: 256 * 1024 ** 2 }) }),
+  ];
+  const h = await mount(t, { read: () => Promise.resolve(reads.shift() ?? overview({ installation: installation({ bytes: 256 * 1024 ** 2 }) })) });
+  const details = () => all(h.root, 'details');
+  assert.ok(details().length >= 2);
+  for (const node of details()) assert.ok(!node.open, 'details start collapsed');
+  details()[0].open = true;
+  const key = details()[0].getAttribute('data-native-model-details');
+  h.clock.tick();
+  await settle();
+  assert.match(h.root.textContent, /256(?:\.0)? MiB/, 'progress re-rendered');
+  const reopened = details().find(node => node.getAttribute('data-native-model-details') === key);
+  assert.equal(reopened.open, true, 'user-opened details survive the 500 ms progress re-render');
+  assert.equal(details().filter(node => node.open).length, 1, 'other details stay collapsed');
+  const progress = all(h.root, 'progress')[0];
+  assert.equal(progress.parentNode.getAttribute('class'), 'native-model-row-progress');
+  assert.match(progress.parentNode.parentNode.getAttribute('class'), /native-model-row/);
+});

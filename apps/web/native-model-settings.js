@@ -152,6 +152,18 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
   function render(overview) {
     const focusedKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute('data-native-model-action') : null;
+    // The 500 ms download observer re-renders the whole panel; keep user-opened
+    // <details> open and ancestor scroll positions stable across re-renders.
+    const openDetails = new Set();
+    (function collectOpen(node) {
+      const key = node.getAttribute?.('data-native-model-details');
+      if (key !== null && key !== undefined && node.open) openDetails.add(key);
+      for (const child of node.children || []) collectOpen(child);
+    })(root);
+    const scrollers = [];
+    for (let node = root; node; node = node.parentElement) {
+      if (node.scrollTop) scrollers.push([node, node.scrollTop]);
+    }
     clearListeners();
     buttons.clear();
     // Main's projection names the host; anything other than win32 keeps the macOS wording.
@@ -222,6 +234,8 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
       }
       // License URL and languages stay in a collapsed <details> as plain text (no opener).
       const details = classed(element('details'), 'native-model-details');
+      details.setAttribute('data-native-model-details', String(model.modelId));
+      if (openDetails.has(String(model.modelId))) details.open = true;
       details.append(
         element('summary', '詳情'),
         classed(element('p', `${model.kind === 'stt' ? 'STT：將語音辨識為文字' : 'TTS：將文字合成為語音'} · 模型語言能力：${model.languages.join('、')}`), 'native-model-kind'),
@@ -234,7 +248,6 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
       // state pill stays for assistive tech only so each card has at most two visible actions.
       if (model.state === 'missing' || tier) stateClasses.push('visually-hidden');
       actions.appendChild(classed(element('span', MODEL_STATES[model.state] || '不可用'), ...stateClasses));
-      if (busyHere) actions.append(...progressNodes);
       if (failedHere) actions.appendChild(classed(element('span', '安裝失敗'), 'native-model-row-error'));
       if (model.state === 'missing') {
         const install = actionButton(failedHere ? '重試' : '下載', busy || !canInstall(model),
@@ -257,6 +270,8 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
         actions.appendChild(remove);
       }
       row.append(info, actions);
+      // Progress gets its own full-width line under the card instead of squeezing the action column.
+      if (busyHere) row.appendChild(classed(element('div'), 'native-model-row-progress')).append(...progressNodes);
       return row;
     }
     const allModels = overview?.models || [];
@@ -316,8 +331,11 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
       : MODE_LABELS[overview.mode] || MODE_LABELS.unavailable;
     const summary = classed(element('p', '語音辨識與語音合成各裝好一個，即可語音對話；安裝後請完整結束 App 再開啟。'), 'native-model-summary');
     const more = classed(element('details'), 'native-model-more');
+    more.setAttribute('data-native-model-details', '__more__');
+    if (openDetails.has('__more__')) more.open = true;
     more.append(element('summary', '更多說明'), classed(element('p', mode), 'native-model-note'), boundary, reuse);
     root.replaceChildren(title, restart, status, ...groups, summary, more, reloadOverview);
+    for (const [node, top] of scrollers) node.scrollTop = top;
     const focusedButton = buttons.get(focusedKey);
     if (focusedButton && !focusedButton.disabled) focusedButton.focus();
     syncPolling();
