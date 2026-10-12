@@ -6,16 +6,22 @@ The same web interface runs in the browser, in the macOS/Windows desktop App, an
 
 > Some package names and App identifiers still use the earlier working name **Voice Practice**.
 
-![OpenCoach conversation practice with the Heart coach, text input, voice controls, and shadowing feedback](docs/images/opencoach-conversation.png)
+![OpenCoach conversation with the Heart coach: a coffee-ordering role-play with a local LLM and a shadowing score](docs/images/opencoach-conversation.png)
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/images/opencoach-lessons.png" alt="OpenCoach lesson map with progress and unlock states"></td>
-    <td width="32%"><img src="docs/images/opencoach-model-settings.png" alt="OpenCoach model settings with a local OpenAI-compatible endpoint"></td>
+    <td width="34%"><img src="docs/images/opencoach-speech-models.png" alt="Speech model settings: four Whisper tiers with sizes, licenses and a device recommendation"></td>
+    <td width="66%"><img src="docs/images/opencoach-coach-editor.png" alt="Coach editor: name, title, description, color, voice, rate, teaching style and greeting"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Lessons</strong><br>Built-in lessons with local progress; editable and exportable.</td>
-    <td align="center"><strong>Model settings</strong><br>Local or cloud endpoint; no key needed for local services.</td>
+    <td align="center"><strong>Speech models</strong><br>Pick a Whisper tier; models download in the App and then work offline.</td>
+    <td align="center"><strong>Editable coaches</strong><br>Name, voice, rate and the teaching style sent to the LLM.</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/opencoach-lessons.png" alt="Lesson map with progress and unlock states"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><strong>Lessons</strong><br>Built-in lessons with local progress; editable and exportable.</td>
   </tr>
 </table>
 
