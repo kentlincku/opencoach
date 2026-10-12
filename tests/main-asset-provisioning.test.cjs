@@ -481,8 +481,9 @@ test('D Windows startup Menu shares IPC admission and cancels only original cons
  first.resolve({response:1});assert.equal((await task).cancelled,true);
  assert.equal(h.downloads(),0);assert.equal(h.children.length,0);
  const successor=h.invoke('models:install',{modelId:'fixture-model'});
- assert.equal(h.dialogs.length,2);assert.equal(cancelOriginal().cancelled,false,'stale Menu callback cannot cancel successor');
- second.resolve({response:1});const result=await successor;
+ // Model packs start on click (removable afterwards): no native consent dialog.
+ assert.equal(h.dialogs.length,1);assert.equal(cancelOriginal().cancelled,false,'stale Menu callback cannot cancel successor');
+ const result=await successor;
  assert.equal(result.state,'installed');assert.equal(result.restartRequired,true);
  assert.equal(h.children.length,0);assert.match(h.menu('asset-status').label,/重新啟動/);
  assert.equal(h.menu('asset-runtime').enabled,true);assert.equal(h.menu('asset-cancel').enabled,false);
@@ -519,7 +520,7 @@ test('D cold owned profile: real Main Menu runtime, IPC models, fresh Main VM st
  assert.equal((await managers.model.status('fixture-model')).state,'unavailable');
  await assert.rejects(h.invoke('voice:health'),/NATIVE_VOICE_RUNTIME_UNAVAILABLE/);
  const model=await h.invoke('models:install',{modelId:'fixture-model'});
- assert.equal(model.state,'installed');assert.equal(model.restartRequired,true);assert.equal(h.dialogs.length,2);
+ assert.equal(model.state,'installed');assert.equal(model.restartRequired,true);assert.equal(h.dialogs.length,1,'model packs need no consent dialog');
  assert.equal(h.children.length,1);await assert.rejects(h.invoke('voice:health'),/NATIVE_VOICE_RUNTIME_UNAVAILABLE/);
  const runtimeStatus=await managers.runtime.status(), modelStatus=await managers.model.status('fixture-model');
  const metadata=await fsp.readFile(managers.runtime._selection().layout.metadata);
@@ -578,7 +579,7 @@ test('D real B model cancellation before versus after commit preserves installed
   assert.equal((await h.invoke('models:cancel',{modelId:'fixture-model'})).cancelled,true);held.resolve();
   const [result]=await observed;
   if(committed){assert.equal(result.status,'fulfilled');assert.equal(result.value.state,'installed');assert.equal(result.value.restartRequired,true);assert.match(h.menu('asset-status').label,/重新啟動/);}
-  else {assert.equal(result.status,'rejected');assert.match(result.reason.message,/INSTALL_CANCELLED/);}
+  else {assert.equal(result.status,'fulfilled');assert.equal(result.value.cancelled,true,'a user cancel is not reported as a failure');}
   assert.equal((await h.models.status('fixture-model')).state,committed?'installed':'unavailable');
   assert.equal(h.children.length,0);assert.equal(h.models.coordinator.snapshot().pins,0);await h.quit();
  }

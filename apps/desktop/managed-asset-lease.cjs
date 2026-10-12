@@ -35,10 +35,21 @@ class ManagedAssetCoordinator {
   constructor(appRoot) {
     this.appRoot = path.resolve(appRoot);
     this.roots = new Map();
-    this.active = null;
+    // One exclusive operation (runtime install, snapshot preparation, removal,
+    // cleanup) XOR any number of shared model installs on distinct roots.
+    this.exclusive = null;
+    this.shared = new Map(); // operation -> metadata path (one install per asset)
     // Trusted host I/O seam for portable fault injection, never renderer input.
     this.io = {statfs: root => fs.statfsSync(root), remove: root => removeManagedTree(root)};
   }
+  get active() {
+    return this.exclusive || (this.shared.size ? this.shared.keys().next().value : null);
+  }
+  set active(operation) {
+    if (operation !== null && (this.exclusive || this.shared.size)) throw new Error('INSTALL_ALREADY_RUNNING');
+    this.exclusive = operation;
+  }
+  owns(operation) { return Boolean(operation) && (this.exclusive === operation || this.shared.has(operation)); }
   snapshot() {
     const records = [...this.roots.values()];
     return Object.freeze({active: this.active !== null, roots: records.length,
@@ -47,15 +58,16 @@ class ManagedAssetCoordinator {
       retained: Object.freeze(records.filter(r => !r.keep).map(r => Object.freeze({root: r.root,
         pins: r.pins.size, reservation: r.reservation, error: r.error})))});
   }
-  begin(root, metadata, reservation, readMetadata) {
-    if (this.active) throw new Error('INSTALL_ALREADY_RUNNING');
+  begin(root, metadata, reservation, readMetadata, {shared = false} = {}) {
+    if (this.exclusive || (!shared && this.shared.size)
+        || [...this.shared.values()].includes(metadata)) throw new Error('INSTALL_ALREADY_RUNNING');
     if (this.roots.size >= LEASE_LIMITS.roots) throw new Error('OWNED_ROOT_LIMIT');
     if (this.snapshot().pins >= LEASE_LIMITS.pins) throw new Error('PIN_LIMIT');
     if (!Number.isSafeInteger(reservation) || reservation <= 0) throw new Error('INVALID_RESERVATION');
     const relative = path.relative(this.appRoot, root);
     if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || this.roots.has(root)) throw new Error('MANAGED_PATH_ESCAPE');
     const operation = {};
-    this.active = operation;
+    if (shared) this.shared.set(operation, metadata); else this.exclusive = operation;
     this.roots.set(root, {root, metadata, readMetadata, owned: false, identity: null, reservation, pins: new Map(), keep: false, error: null});
     return operation;
   }
@@ -153,12 +165,16 @@ class ManagedAssetCoordinator {
     }
   }
   async finish(operation) {
-    if (this.active !== operation) throw new Error('INSTALL_OWNER_MISMATCH');
-    try { this.cleanup(); } finally { if (this.active === operation) this.active = null; }
+    if (!this.owns(operation)) throw new Error('INSTALL_OWNER_MISMATCH');
+    // Concurrent shared installs keep their own roots pinned, so cleanup skips them.
+    try { this.cleanup(); } finally {
+      if (this.exclusive === operation) this.exclusive = null;
+      this.shared.delete(operation);
+    }
   }
   async retryCleanup() {
     if (this.active) throw new Error('INSTALL_ALREADY_RUNNING');
-    const operation = {}; this.active = operation;
+    const operation = {}; this.exclusive = operation;
     await this.finish(operation);
     return this.snapshot();
   }

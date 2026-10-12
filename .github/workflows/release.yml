@@ -78,12 +78,12 @@ jobs:
           cat > notes.md <<EOF
           **Unsigned engineering pre-release — not for production.** Built by GitHub Actions from \`${sha}\`.
 
-          - macOS only in this release: Apple Silicon (arm64), ad-hoc signed (no Developer ID), not notarized. The first launch is blocked; open it from System Settings → Privacy & Security → Open Anyway.
+          - macOS: Apple Silicon (arm64), ad-hoc signed (no Developer ID), not notarized. The first launch is blocked; open it from System Settings → Privacy & Security → Open Anyway.
           - Speech models are not included. Choose and download them in Settings (Hugging Face / GitHub sources pinned to exact revisions, verified by SHA-256).
-          - Windows stays on v0.2.0-beta.1; iOS is source-only (build it yourself with Xcode, see docs/install-ios.md).
+          - Windows x64: the Setup EXE, if attached, is uploaded by hand after this workflow; it is built on the maintainer's Windows machine, not by GitHub Actions, and \`SHA256SUMS.txt\` is updated to include it. iOS is source-only (build it yourself with Xcode, see docs/install-ios.md).
           - Verify downloads against \`SHA256SUMS.txt\` before opening.
 
-          Installation: see docs/install-macos.md and docs/install-ios.md.
+          Installation: see docs/install-macos.md, docs/install-windows.md and docs/install-ios.md.
           EOF
           sed -i 's/^          //' notes.md
           gh release create "$RELEASE_TAG" release/* \

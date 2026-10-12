@@ -1,10 +1,10 @@
 # Install on macOS (Apple Silicon beta)
 
-OpenCoach v0.3.0-beta.2 is an unsigned engineering pre-release for Apple Silicon Macs (arm64), macOS 13 or later.
+OpenCoach v0.3.0-beta.3 is an unsigned engineering pre-release for Apple Silicon Macs (arm64), macOS 13 or later.
 
 ## Download and verify
 
-1. From the GitHub release, download `Voice-Practice-0.3.0-beta.2-arm64.dmg` (or the `.zip`) and `SHA256SUMS.txt`.
+1. From the GitHub release, download `OpenCoach-0.3.0-beta.3-arm64.dmg` (or the `.zip`) and `SHA256SUMS.txt`.
 2. Verify the checksum before opening:
    ```bash
    shasum -a 256 -c SHA256SUMS.txt --ignore-missing
@@ -30,7 +30,7 @@ The App contains the voice runtime but **no speech model weights**. Open **Setti
 - one speech-to-text model (Whisper tiny / base / small / large-v3-turbo, MLX format, from Hugging Face), and
 - the Kokoro text-to-speech model (from GitHub).
 
-Each download is pinned to an exact upstream revision, shows its size and license before you agree, and is verified by SHA-256 before use. Once installed, models are reused offline. Until both are ready you can still type to the coach.
+Clicking a model's download button starts the download; several downloads can run at once. Size and license are shown on each model card. Each download is pinned to an exact upstream revision and verified by SHA-256 before use. Once installed, models are reused offline. Until both are ready you can still type to the coach.
 
 ## Connect a local LLM (oMLX example)
 
@@ -46,7 +46,7 @@ The release workflow builds the App from pinned public sources only. You can run
 npm ci
 npm run build:icons
 bash scripts/ci-pack-macos.sh "$PWD/.build/mac"
-# outputs: .build/mac/release/Voice-Practice-<version>-arm64.dmg and .zip
+# outputs: .build/mac/release/OpenCoach-<version>-arm64.dmg and .zip
 ```
 
 `scripts/ci-build-macos-runtime.py` fetches every runtime input listed in `spikes/packaged-runtime/r56-acquisition.lock.json` and checks its size and SHA-256 before use.

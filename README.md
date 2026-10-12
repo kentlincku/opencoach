@@ -29,9 +29,9 @@ The same web interface runs in the browser, in the macOS/Windows desktop App, an
 
 | Platform | Current version | How |
 |---|---|---|
-| macOS (Apple Silicon, macOS 13+) | **v0.3.0-beta.2** | Download the DMG from [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-macos.md) |
+| macOS (Apple Silicon, macOS 13+) | **v0.3.0-beta.3** | Download the DMG from [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-macos.md) |
 | iOS / iPadOS 17+ | source only | Build and install with Xcode → [install guide](docs/install-ios.md) |
-| Windows x64 | v0.2.0-beta.1 | Previous release on [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-windows.md); not yet updated to 0.3 |
+| Windows x64 | **v0.3.0-beta.3** | Download the Setup EXE from [Releases](https://github.com/kentlincku/opencoach/releases) → [install guide](docs/install-windows.md); built on the maintainer's Windows machine, not by CI |
 | Browser | — | Run from source (`npm run start:web`), see [Development](#development) |
 
 All builds are beta. The macOS App is **not signed with an Apple Developer ID or notarized**: the first launch needs **System Settings → Privacy & Security → Open Anyway**. Verify the download against `SHA256SUMS.txt` first. There is no App Store or TestFlight release.
@@ -53,7 +53,7 @@ Android was removed in v0.3.0-beta.1.
 | | Speech-to-text | Text-to-speech |
 |---|---|---|
 | macOS App | MLX Whisper (4 tiers, downloaded in the App) | Kokoro (downloaded in the App), or system voices |
-| Windows App (0.2) | faster-whisper on CPU/CUDA | Kokoro ONNX, or system voices |
+| Windows App | faster-whisper on CPU | Kokoro ONNX, or system voices |
 | iOS App | Apple Speech, forced on-device | System voices |
 | Browser | Whisper in the browser | Kokoro in the browser, or system voices |
 

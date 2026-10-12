@@ -2,6 +2,22 @@
 
 All notable public changes to OpenCoach are documented here.
 
+## 0.3.0-beta.3
+
+### Added
+- Windows x64 installer for 0.3 (CPU voice runtime, speech models downloaded in the App). Built on the maintainer's Windows machine and uploaded by hand; not built by CI yet.
+- Several speech models can download at the same time.
+
+### Changed
+- Clicking a model's download button starts the download without a confirmation dialog; size and license stay on the model card.
+- Release files are named `OpenCoach-…` (`OpenCoach-0.3.0-beta.3-arm64.dmg`, `OpenCoach-Setup-0.3.0-beta.3-x64.exe`). The App itself is still called Voice Practice.
+- Download progress bar spans the model card; the amount and 取消 sit on the line below.
+
+### Fixed
+- Windows: the packaged App shipped no Chromium locale files and could not load its window; English and Traditional Chinese locales are kept on both macOS and Windows.
+- A cancelled model download shows as cancelled instead of 安裝失敗.
+- Model 詳情 stays open and the layout no longer jumps while a download progresses.
+
 ## [Unreleased]
 
 ## [0.3.0-beta.2] - 2026-10-12

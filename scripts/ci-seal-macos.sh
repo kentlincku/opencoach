@@ -29,7 +29,7 @@ sign --entitlements "$ENT" "$APP"
 after="$(tree)"
 [ "$before" = "$after" ] || { echo "voice runtime bytes changed while sealing" >&2; exit 1; }
 mkdir -p "$OUT"
-NAME="Voice-Practice-$VERSION-arm64"
+NAME="OpenCoach-$VERSION-arm64"
 STAGE="$(mktemp -d)"
 ditto "$APP" "$STAGE/Voice Practice.app"
 ln -s /Applications "$STAGE/Applications"

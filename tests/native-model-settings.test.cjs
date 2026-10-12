@@ -219,7 +219,7 @@ test('an explicit install click delegates consent once and locks duplicate actio
   await settle();
   assert.deepEqual(h.calls.install, ['english-stt']);
   assert.deepEqual(h.calls.installArgs, [['english-stt']], 'renderer supplies no approval flag or invented consent');
-  assert.match(h.root.textContent, /等待.*同意/);
+  assert.match(h.root.textContent, /準備下載/);
   assert.equal(button(h.root, '安裝 English recognizer').disabled, true);
   await h.controller.refresh();
   button(h.root, '安裝 English recognizer').click();
@@ -241,7 +241,7 @@ test('observing a Main action polls at 500 ms without overlapping reads and rend
   const h = await mount(t, { read: () => Promise.resolve(reads.shift()) });
   assert.equal(h.clock.tasks.size, 1);
   assert.equal([...h.clock.tasks.values()][0].ms, 500);
-  assert.match(h.root.textContent, /等待.*同意/);
+  assert.match(h.root.textContent, /準備下載/);
   assert.deepEqual(h.calls.install, [], 'observing someone else’s action never requests consent');
   assert.equal(button(h.root, '安裝 English recognizer').disabled, true);
   h.clock.tick();
@@ -301,18 +301,18 @@ test('cancel targets the rendered actionId once and a stale view cannot cancel a
     overview: overview({ installation: installation() }),
     cancel: () => cancellation.promise,
   });
-  const oldCancel = button(h.root, '取消本次安裝');
+  const oldCancel = button(h.root, '取消安裝 English recognizer');
   assert.equal(oldCancel.type, 'button');
   oldCancel.click();
   oldCancel.click();
   oldCancel.dispatchEvent({ type: 'click' });
   assert.deepEqual(h.calls.cancel, ['action-A']);
-  assert.equal(button(h.root, '取消本次安裝').disabled, true);
+  assert.equal(button(h.root, '取消安裝 English recognizer').disabled, true);
   h.setOverview(overview({ installation: installation({ actionId: 'action-B' }) }));
   await h.controller.refresh();
   oldCancel.dispatchEvent({ type: 'click' });
   assert.deepEqual(h.calls.cancel, ['action-A'], 'detached action A is not rebound to B');
-  const newCancel = button(h.root, '取消本次安裝');
+  const newCancel = button(h.root, '取消安裝 English recognizer');
   assert.equal(newCancel.disabled, false);
   newCancel.click();
   assert.deepEqual(h.calls.cancel, ['action-A', 'action-B']);
@@ -360,7 +360,7 @@ test('failed installs show literal errors and retry only after another explicit 
   assert.equal(h.clock.tasks.size, 0);
   assert.deepEqual(h.calls.install, []);
   button(h.root, '安裝 English recognizer').click();
-  assert.match(h.root.textContent, /等待.*同意/);
+  assert.match(h.root.textContent, /準備下載/);
   assert.equal(h.root.textContent.includes(maliciousCode), false, 'old failure is not presented as the new action');
   h.setOverview(overview({ installation: installation({ actionId: 'failed-retry', phase: 'failed', errorCode: 'DISK_FULL' }) }));
   first.reject(new Error(maliciousMessage));
@@ -378,7 +378,7 @@ test('failed installs show literal errors and retry only after another explicit 
   assert.deepEqual(h.calls.install, ['english-stt'], 'no automatic retry');
   retryButton.click();
   assert.deepEqual(h.calls.install, ['english-stt', 'english-stt']);
-  assert.match(h.root.textContent, /等待.*同意/);
+  assert.match(h.root.textContent, /準備下載/);
   assert.equal(h.root.textContent.includes(maliciousMessage), false);
   assert.match(h.root.textContent, /使用中/);
   assert.equal(h.calls.fetch, 0);
@@ -526,16 +526,16 @@ test('cancel failure is retryable only for its own action and stale rejection ca
     overview: overview({ installation: installation() }),
     cancel: () => cancellations.shift(),
   });
-  button(h.root, '取消本次安裝').click();
+  button(h.root, '取消安裝 English recognizer').click();
   assert.match(h.root.textContent, /取消中/);
   first.reject(new Error(message));
   await settle();
   assert.ok(h.root.textContent.includes(message));
   assert.match(h.root.textContent, /取消失敗/);
   assert.equal(all(h.root, 'img').length, 0);
-  assert.equal(button(h.root, '取消本次安裝').disabled, false);
+  assert.equal(button(h.root, '取消安裝 English recognizer').disabled, false);
   assert.equal(button(h.root, '安裝 English recognizer').disabled, true);
-  button(h.root, '取消本次安裝').click();
+  button(h.root, '取消安裝 English recognizer').click();
   assert.equal(h.root.textContent.includes(message), false);
   h.setOverview(overview({ installation: installation({ actionId: 'action-B' }) }));
   await h.controller.refresh();
@@ -543,7 +543,7 @@ test('cancel failure is retryable only for its own action and stale rejection ca
   retry.reject(new Error('stale A cancellation error'));
   await settle();
   assert.equal(h.root.textContent, currentText);
-  assert.equal(button(h.root, '取消本次安裝').disabled, false);
+  assert.equal(button(h.root, '取消安裝 English recognizer').disabled, false);
   assert.deepEqual(h.calls.cancel, ['action-A', 'action-A']);
   assert.deepEqual(h.calls.legacyCancel, []);
 });
@@ -557,14 +557,14 @@ test('cancelling stays busy until the original install promise settles rather th
   button(h.root, '安裝 English recognizer').click();
   h.setOverview({ ...data, installation: installation() });
   await h.controller.refresh();
-  const oldCancel = button(h.root, '取消本次安裝');
+  const oldCancel = button(h.root, '取消安裝 English recognizer');
   oldCancel.click();
   h.setOverview({ ...data, installation: installation({ phase: 'cancelling', cancelled: false }) });
   await h.controller.refresh();
   await settle();
   assert.ok(h.root.textContent.includes('取消中，等待原始作業結束'));
   assert.equal(h.root.textContent.includes('已取消'), false);
-  assert.equal(button(h.root, '取消本次安裝').disabled, true);
+  assert.equal(button(h.root, '取消安裝 English recognizer').disabled, true);
   assert.equal(button(h.root, '安裝 English recognizer').disabled, true);
   assert.equal(button(h.root, '移除 English voice').disabled, true);
   oldCancel.dispatchEvent({ type: 'click' });
@@ -586,7 +586,7 @@ test('cancelling stays busy until the original install promise settles rather th
   const observer = await mount(t, { overview: overview({ installation: installation({ phase: 'cancelling' }) }) });
   assert.ok(observer.root.textContent.includes('取消中，等待原始作業結束'));
   assert.equal(observer.clock.tasks.size, 1, 'a reopened panel keeps observing the original Main transaction');
-  assert.equal(button(observer.root, '取消本次安裝').disabled, true);
+  assert.equal(button(observer.root, '取消安裝 English recognizer').disabled, true);
   assert.equal(button(observer.root, '安裝 English recognizer').disabled, true);
   assert.deepEqual(observer.calls.install, []);
 });
@@ -645,15 +645,15 @@ test('progress is indeterminate for unknown totals and clamps invalid byte value
 
 test('progress refresh preserves keyboard focus only for the same action and never steals external focus', async t => {
   const h = await mount(t, { overview: overview({ installation: installation() }) });
-  button(h.root, '取消本次安裝').focus();
+  button(h.root, '取消安裝 English recognizer').focus();
   h.setOverview(overview({ installation: installation({ bytes: 100 }) }));
   h.clock.tick();
   await settle();
-  assert.ok(h.document.activeElement === button(h.root, '取消本次安裝'), 'same action retains keyboard focus after progress render');
+  assert.ok(h.document.activeElement === button(h.root, '取消安裝 English recognizer'), 'same action retains keyboard focus after progress render');
   assert.equal(h.root.contains(h.document.activeElement), true);
   h.setOverview(overview({ installation: installation({ actionId: 'action-B' }) }));
   await h.controller.refresh();
-  assert.ok(h.document.activeElement !== button(h.root, '取消本次安裝'), 'focus must not be rebound from action A to B');
+  assert.ok(h.document.activeElement !== button(h.root, '取消安裝 English recognizer'), 'focus must not be rebound from action A to B');
   const outside = h.document.createElement('button');
   outside.focus();
   await h.controller.refresh();
@@ -668,10 +668,10 @@ test('retry after cancellation waits for new consent instead of attributing the 
     install: () => work.promise,
   });
   button(h.root, '安裝 English recognizer').click();
-  assert.match(h.root.textContent, /等待.*同意/);
+  assert.match(h.root.textContent, /準備下載/);
   assert.equal(h.root.textContent.includes('取消中'), false);
   await h.controller.refresh();
-  assert.match(h.root.textContent, /等待.*同意/);
+  assert.match(h.root.textContent, /準備下載/);
   h.setOverview(overview({ installation: installation({ actionId: 'action-B', phase: 'cancelled', cancelled: true }) }));
   await h.controller.refresh();
   assert.ok(h.root.textContent.includes('取消中，等待原始作業結束'));
@@ -686,7 +686,6 @@ test('retry after cancellation waits for new consent instead of attributing the 
 test('Windows overview renders Windows wording and a CPU-only note; macOS wording unchanged', async t => {
   const w = await mount(t, { overview: overview({ platform: 'win32' }) });
   assert.match(w.root.textContent, /Windows 原生語音模型/);
-  assert.match(w.root.textContent, /Windows 原生對話框/);
   assert.match(w.root.textContent, /CPU/);
   assert.doesNotMatch(w.root.textContent, /macOS/);
   const m = await mount(t, { overview: overview({ platform: 'darwin' }) });
@@ -762,4 +761,48 @@ test('an invalid preference is shown as an alert and not as a default selection'
     select: async () => {} });
   const alert = all(root).find(n => n.getAttribute?.('role') === 'alert' && n.textContent.includes('STT_PREFERENCE_INVALID'));
   assert.ok(alert, root.textContent);
+});
+
+test('download progress re-renders keep opened details open and put progress on its own row line', async t => {
+  const reads = [
+    overview({ installation: installation({ bytes: 128 * 1024 ** 2 }) }),
+    overview({ installation: installation({ bytes: 256 * 1024 ** 2 }) }),
+  ];
+  const h = await mount(t, { read: () => Promise.resolve(reads.shift() ?? overview({ installation: installation({ bytes: 256 * 1024 ** 2 }) })) });
+  const details = () => all(h.root, 'details');
+  assert.ok(details().length >= 2);
+  for (const node of details()) assert.ok(!node.open, 'details start collapsed');
+  details()[0].open = true;
+  const key = details()[0].getAttribute('data-native-model-details');
+  h.clock.tick();
+  await settle();
+  assert.match(h.root.textContent, /256(?:\.0)? MiB/, 'progress re-rendered');
+  const reopened = details().find(node => node.getAttribute('data-native-model-details') === key);
+  assert.equal(reopened.open, true, 'user-opened details survive the 500 ms progress re-render');
+  assert.equal(details().filter(node => node.open).length, 1, 'other details stay collapsed');
+  const progress = all(h.root, 'progress')[0];
+  assert.equal(progress.parentNode.getAttribute('class'), 'native-model-row-progress');
+  assert.match(progress.parentNode.parentNode.getAttribute('class'), /native-model-row/);
+});
+
+test('two models download side by side, each row owns its own progress and cancel', async t => {
+  const work = { 'english-stt': deferred(), 'english-tts': deferred() };
+  const data = overview();
+  data.models[1].state = 'missing';
+  const h = await mount(t, { overview: data, install: id => work[id].promise });
+  button(h.root, '安裝 English recognizer').click();
+  assert.equal(button(h.root, '安裝 English voice').disabled, false, 'other model stays downloadable');
+  button(h.root, '安裝 English voice').click();
+  assert.deepEqual(h.calls.install, ['english-stt', 'english-tts']);
+  const both = [installation(), installation({ actionId: 'action-B', modelId: 'english-tts', total: 2 * 1024 ** 3, bytes: 1024 ** 3 })];
+  h.setOverview({ ...data, installation: both[1], installations: both });
+  await h.controller.refresh();
+  assert.match(h.root.textContent, /2 個模型下載中/);
+  assert.equal(all(h.root, 'progress').length, 2);
+  button(h.root, '取消安裝 English voice').click();
+  assert.deepEqual(h.calls.cancel, ['action-B'], 'cancel is per action');
+  assert.equal(button(h.root, '取消安裝 English recognizer').disabled, false);
+  work['english-tts'].resolve();
+  await settle();
+  assert.equal(h.clock.tasks.size, 1, 'still observing the remaining download');
 });

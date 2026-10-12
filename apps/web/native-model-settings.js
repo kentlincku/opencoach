@@ -34,7 +34,7 @@ const REASON_LABELS = {
 };
 const ACTIVE_PHASES = new Set(['confirming', 'downloading', 'verifying', 'cancelling']);
 const PHASE_LABELS = {
-  confirming: '等待原生對話框同意；未同意前不會下載。',
+  confirming: '準備下載',
   downloading: '下載中',
   verifying: '驗證中',
   installed: '已安裝',
@@ -73,8 +73,9 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
   const document = root.ownerDocument;
   let disposed = false;
   let snapshot = null;
-  let installing = false;
-  let previousInstallActionId = null;
+  // Model ids whose install IPC is still pending in this view; others stay clickable.
+  // modelId -> actionId Main showed for that model when the click happened (null if none).
+  const installing = new Map();
   let removing = false;
   let selecting = false;
   let operationError = '';
@@ -115,8 +116,17 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
     return button;
   }
 
-  function isActive() {
-    return ACTIVE_PHASES.has(snapshot?.installation?.phase);
+  // Per-model actions from Main; older Mains only expose the single `installation`.
+  function actionsOf(overview) {
+    if (Array.isArray(overview?.installations)) return overview.installations;
+    return overview?.installation ? [overview.installation] : [];
+  }
+  function actionFor(modelId) {
+    return actionsOf(snapshot).find(action => action.modelId === modelId) || null;
+  }
+  function isActive(action) {
+    return action === undefined ? actionsOf(snapshot).some(item => ACTIVE_PHASES.has(item.phase))
+      : ACTIVE_PHASES.has(action?.phase);
   }
 
   function canInstall(model) {
@@ -138,7 +148,7 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
   }
 
   function syncPolling() {
-    const observe = !disposed && (installing || isActive());
+    const observe = !disposed && (installing.size > 0 || isActive());
     if (observe && timer === null) {
       timer = setIntervalImpl(() => {
         if (!disposed && readsInFlight === 0) void refresh();
@@ -152,6 +162,18 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
   function render(overview) {
     const focusedKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute('data-native-model-action') : null;
+    // The 500 ms download observer re-renders the whole panel; keep user-opened
+    // <details> open and ancestor scroll positions stable across re-renders.
+    const openDetails = new Set();
+    (function collectOpen(node) {
+      const key = node.getAttribute?.('data-native-model-details');
+      if (key !== null && key !== undefined && node.open) openDetails.add(key);
+      for (const child of node.children || []) collectOpen(child);
+    })(root);
+    const scrollers = [];
+    for (let node = root; node; node = node.parentElement) {
+      if (node.scrollTop) scrollers.push([node, node.scrollTop]);
+    }
     clearListeners();
     buttons.clear();
     // Main's projection names the host; anything other than win32 keeps the macOS wording.
@@ -159,55 +181,59 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
     const osName = windows ? 'Windows' : 'macOS';
     const title = classed(element('h3', `${osName} 原生語音模型`), 'native-model-title');
     const boundary = classed(element('p', '目前原生語音練習僅啟用英文（en）。其他語言僅為模型能力資訊（metadata），不代表已開放練習。'), 'native-model-note');
-    const reuse = classed(element('p', `語音辨識（STT）有四檔可選，只需下載選用的那一檔。各模型分包安裝；只有按下安裝並在 ${osName} 原生對話框同意後才會下載。已安裝模型可離線重用；缺少一包不會刪除其他有效模型。原生語音對話需 STT 與 TTS 兩包都就緒，文字練習仍可使用。${windows ? '此版本語音以 CPU 執行。' : ''}`), 'native-model-note');
-    const action = overview?.installation;
-    // Historical cancellation must not masquerade as a new consent request.
-    const awaitingCancelledInstall = installing && action?.phase === 'cancelled'
-      && action.actionId !== previousInstallActionId;
-    const phase = removing ? 'removing' : isActive() ? action.phase
-      : installing ? (awaitingCancelledInstall ? 'cancelling' : 'confirming') : action?.phase;
-
-    // Progress and cancel belong to the row being installed; without a matching
-    // row they fall back to the shared status area so nothing is ever hidden.
-    const progressNodes = [];
-    if (action && (phase === 'downloading' || phase === 'verifying')) {
-      const progress = element('progress');
-      progress.setAttribute('aria-label', '模型下載進度');
-      progress.setAttribute('class', 'native-model-progress');
-      const total = Number.isFinite(action.total) && action.total > 0 ? action.total : null;
-      const received = Number.isFinite(action.bytes) && action.bytes >= 0 ? action.bytes : 0;
-      const bytes = total === null ? received : Math.min(received, total);
-      let amount = `${formatBytes(bytes)} / 總大小未知`;
-      if (total !== null) {
-        progress.max = total;
-        progress.value = bytes;
-        amount = `${formatBytes(bytes)} / ${formatBytes(total)}（${Math.round(bytes / total * 100)}%）`;
+    const reuse = classed(element('p', `語音辨識（STT）有四檔可選，只需下載選用的那一檔。各模型分包安裝，按下下載即開始，可同時下載多個，用不到的可以再刪掉。已安裝模型可離線重用；缺少一包不會刪除其他有效模型。原生語音對話需 STT 與 TTS 兩包都就緒，文字練習仍可使用。${windows ? '此版本語音以 CPU 執行。' : ''}`), 'native-model-note');
+    function progressFor(model) {
+      const action = actionsOf(overview).find(item => item.modelId === model.modelId) || null;
+      const clicked = installing.has(model.modelId);
+      // A terminal projection for a NEW action while our promise is open means Main is still
+      // unwinding the cancellation; the old terminal action must not look like the new one.
+      const unwinding = clicked && !isActive(action) && action?.phase === 'cancelled'
+        && action.actionId !== installing.get(model.modelId);
+      const pending = clicked && !isActive(action) && !unwinding;
+      const nodes = [];
+      if (action && (action.phase === 'downloading' || action.phase === 'verifying')) {
+        const progress = element('progress');
+        progress.setAttribute('aria-label', `${model.name} 下載進度`);
+        progress.setAttribute('class', 'native-model-progress');
+        const total = Number.isFinite(action.total) && action.total > 0 ? action.total : null;
+        const received = Number.isFinite(action.bytes) && action.bytes >= 0 ? action.bytes : 0;
+        const bytes = total === null ? received : Math.min(received, total);
+        let amount = `${formatBytes(bytes)} / 總大小未知`;
+        if (total !== null) {
+          progress.max = total;
+          progress.value = bytes;
+          amount = `${formatBytes(bytes)} / ${formatBytes(total)}（${Math.round(bytes / total * 100)}%）`;
+        }
+        nodes.push(progress, classed(element('p', `${PHASE_LABELS[action.phase]} · ${amount}`), 'native-model-amount'));
+      } else if (pending || action?.phase === 'confirming') {
+        nodes.push(classed(element('p', '準備下載…'), 'native-model-amount'));
+      } else if (action?.phase === 'cancelling' || unwinding) {
+        nodes.push(classed(element('p', PHASE_LABELS.cancelling), 'native-model-amount'));
       }
-      progressNodes.push(progress, classed(element('p', amount), 'native-model-amount'));
+      if (isActive(action) && typeof action.actionId === 'string' && action.actionId) {
+        const actionId = action.actionId;
+        const busy = cancelling.has(actionId) || action.cancelled === true || action.phase === 'cancelling';
+        const cancel = actionButton(busy ? '取消中…' : '取消', busy,
+          () => { void cancelInstall(actionId); }, `cancel:${actionId}`);
+        cancel.setAttribute('aria-label', `取消安裝 ${model.name}`);
+        nodes.push(cancel);
+      }
+      return { action, nodes, active: pending || unwinding || isActive(action) };
     }
-    if (isActive() && typeof action.actionId === 'string' && action.actionId) {
-      const actionId = action.actionId;
-      const busy = cancelling.has(actionId) || action.cancelled === true || action.phase === 'cancelling';
-      // Visible text is short; the accessible name keeps the full action.
-      const cancel = actionButton(busy ? '取消中…' : '取消', busy,
-        () => { void cancelInstall(actionId); }, `cancel:${actionId}`);
-      cancel.setAttribute('aria-label', '取消本次安裝');
-      progressNodes.push(cancel);
-    }
-    const progressOwner = (overview?.models || []).some(model => model.modelId === action?.modelId) ? action.modelId : null;
 
     // One row per model. STT tiers render as a pick-one group (title, one line, tags);
     // TTS keeps the plain row. Actions: progress+取消 | 下載/重試 | 使用 | 移除 (short labels;
     // the full action stays in aria-label for assistive tech and tests).
-    const busy = installing || removing || selecting || isActive();
+    // Downloads are per model and only lock their own row; removal waits for all downloads (Main enforces it too).
+    const anyDownload = installing.size > 0 || isActive();
     function modelRow(model) {
       const tier = model.kind === 'stt' && TIER_TITLES[model.tier] ? model.tier : null;
       const row = classed(element('li'), 'native-model-row', ...(tier ? ['native-model-tier'] : []),
         ...(model.selected ? ['is-selected'] : []));
       const info = classed(element('div'), 'native-model-info');
-      const owner = model.modelId === progressOwner;
-      const busyHere = owner && progressNodes.length > 0;
-      const failedHere = owner && phase === 'failed' && !installing;
+      const here = progressFor(model);
+      const busyHere = here.active;
+      const failedHere = here.action?.phase === 'failed' && !installing.has(model.modelId);
       const heading = classed(element('div'), 'native-model-heading');
       heading.appendChild(classed(element('h4', tier ? TIER_TITLES[tier] : model.name), 'native-model-name'));
       if (model.selected) heading.appendChild(classed(element('span', '使用中'), 'native-model-tag', 'is-selected'));
@@ -222,6 +248,8 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
       }
       // License URL and languages stay in a collapsed <details> as plain text (no opener).
       const details = classed(element('details'), 'native-model-details');
+      details.setAttribute('data-native-model-details', String(model.modelId));
+      if (openDetails.has(String(model.modelId))) details.open = true;
       details.append(
         element('summary', '詳情'),
         classed(element('p', `${model.kind === 'stt' ? 'STT：將語音辨識為文字' : 'TTS：將文字合成為語音'} · 模型語言能力：${model.languages.join('、')}`), 'native-model-kind'),
@@ -234,10 +262,12 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
       // state pill stays for assistive tech only so each card has at most two visible actions.
       if (model.state === 'missing' || tier) stateClasses.push('visually-hidden');
       actions.appendChild(classed(element('span', MODEL_STATES[model.state] || '不可用'), ...stateClasses));
-      if (busyHere) actions.append(...progressNodes);
       if (failedHere) actions.appendChild(classed(element('span', '安裝失敗'), 'native-model-row-error'));
+      if (!busyHere && here.action?.phase === 'cancelled' && model.state === 'missing') {
+        actions.appendChild(classed(element('span', '已取消'), 'native-model-row-note'));
+      }
       if (model.state === 'missing') {
-        const install = actionButton(failedHere ? '重試' : '下載', busy || !canInstall(model),
+        const install = actionButton(failedHere ? '重試' : '下載', busyHere || removing || !canInstall(model),
           () => { void installModel(model.modelId); }, `install:${model.modelId}`);
         install.setAttribute('aria-label', `安裝 ${model.name}`);
         install.setAttribute('class', 'native-model-install');
@@ -245,18 +275,20 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
         actions.appendChild(install);
       }
       if (canSelect(model)) {
-        const select = classed(actionButton('使用', busy, () => { void selectModel(model.modelId); },
+        const select = classed(actionButton('使用', removing || selecting, () => { void selectModel(model.modelId); },
           `select:${model.modelId}`), 'native-model-select');
         select.setAttribute('aria-label', `選用 ${model.name}`);
         actions.appendChild(select);
       }
       if (canRemove(model)) {
-        const remove = classed(actionButton('移除', busy, () => { void removeModel(model.modelId); },
+        const remove = classed(actionButton('移除', anyDownload || removing || selecting, () => { void removeModel(model.modelId); },
           `remove:${model.modelId}`), 'link-btn', 'native-model-remove');
         remove.setAttribute('aria-label', `移除 ${model.name}`);
         actions.appendChild(remove);
       }
       row.append(info, actions);
+      // Progress gets its own full-width line under the card instead of squeezing the action column.
+      if (busyHere && here.nodes.length) row.appendChild(classed(element('div'), 'native-model-row-progress')).append(...here.nodes);
       return row;
     }
     const allModels = overview?.models || [];
@@ -294,19 +326,18 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
     group(tiers.length ? '語音合成' : '模型', '', others);
     const status = classed(element('div'), 'native-model-status');
     status.setAttribute('role', 'status');
-    if (phase) status.appendChild(element('p', phase === 'confirming'
-      ? `等待 ${osName} 原生對話框同意；未同意前不會下載。` : PHASE_LABELS[phase] || '狀態未知'));
-    if (phase !== 'cancelling' && isActive() && (cancelling.has(action.actionId) || action.cancelled === true)) {
-      status.appendChild(element('p', '取消中，等待原始作業結束'));
-    }
-    const error = classed(element('p', [phase === 'failed' ? action.errorCode : '', operationError, overviewError,
-      cancelError?.actionId === action?.actionId ? cancelError?.message : '',
-    ].filter(Boolean).join('：')), 'native-model-error');
+    const running = actionsOf(overview).filter(item => isActive(item)).length;
+    if (removing) status.appendChild(element('p', PHASE_LABELS.removing));
+    else if (running > 1) status.appendChild(element('p', `${running} 個模型下載中`));
+    const failures = actionsOf(overview).filter(item => item.phase === 'failed' && item.errorCode && !installing.has(item.modelId))
+      .map(item => item.errorCode);
+    const cancelMessage = cancelError && actionsOf(overview).some(item => item.actionId === cancelError.actionId) ? cancelError.message : '';
+    const error = classed(element('p', [...new Set(failures), operationError, overviewError, cancelMessage]
+      .filter(Boolean).join('：')), 'native-model-error');
     error.setAttribute('role', 'alert');
     status.appendChild(error);
-    if (!progressOwner) status.append(...progressNodes);
     const restart = classed(element('p'), 'native-model-banner', 'native-model-restart');
-    if (overview?.restartRequired || overview?.installation?.restartRequired || overview?.models.some(model => model.restartRequired)) {
+    if (overview?.restartRequired || actionsOf(overview).some(item => item.restartRequired) || overview?.models.some(model => model.restartRequired)) {
       restart.textContent = '請完整結束 App（Quit）再開啟，新的模型才會生效；只關閉視窗不算。';
       restart.setAttribute('role', 'status');
     }
@@ -316,23 +347,26 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
       : MODE_LABELS[overview.mode] || MODE_LABELS.unavailable;
     const summary = classed(element('p', '語音辨識與語音合成各裝好一個，即可語音對話；安裝後請完整結束 App 再開啟。'), 'native-model-summary');
     const more = classed(element('details'), 'native-model-more');
+    more.setAttribute('data-native-model-details', '__more__');
+    if (openDetails.has('__more__')) more.open = true;
     more.append(element('summary', '更多說明'), classed(element('p', mode), 'native-model-note'), boundary, reuse);
     root.replaceChildren(title, restart, status, ...groups, summary, more, reloadOverview);
+    for (const [node, top] of scrollers) node.scrollTop = top;
     const focusedButton = buttons.get(focusedKey);
     if (focusedButton && !focusedButton.disabled) focusedButton.focus();
     syncPolling();
   }
 
   async function cancelInstall(actionId) {
-    if (disposed || !isActive() || snapshot.installation.actionId !== actionId
-      || snapshot.installation.cancelled || snapshot.installation.phase === 'cancelling' || cancelling.has(actionId)) return;
+    const action = actionsOf(snapshot).find(item => item.actionId === actionId);
+    if (disposed || !isActive(action) || action.cancelled || action.phase === 'cancelling' || cancelling.has(actionId)) return;
     cancelling.add(actionId);
     cancelError = null;
     render(snapshot);
     try {
       await api.cancelNativeModelInstallAction(actionId);
     } catch (error) {
-      if (!disposed && snapshot?.installation?.actionId === actionId) {
+      if (!disposed && actionsOf(snapshot).some(item => item.actionId === actionId)) {
         cancelError = { actionId, message: `取消失敗：${String(error?.message || error)}` };
       }
     } finally {
@@ -343,7 +377,7 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
 
   async function selectModel(modelId) {
     const model = snapshot?.models.find(candidate => candidate.modelId === modelId);
-    if (disposed || installing || removing || selecting || isActive() || !canSelect(model)) return;
+    if (disposed || removing || selecting || !canSelect(model)) return;
     selecting = true;
     operationError = '';
     render(snapshot);
@@ -360,7 +394,7 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
 
   async function removeModel(modelId) {
     const model = snapshot?.models.find(candidate => candidate.modelId === modelId);
-    if (disposed || installing || removing || isActive() || !canRemove(model)) return;
+    if (disposed || installing.size || removing || isActive() || !canRemove(model)) return;
     removing = true;
     operationError = '';
     render(snapshot);
@@ -377,19 +411,18 @@ export function mountNativeModelSettings({ root, api, setIntervalImpl = setInter
 
   async function installModel(modelId) {
     const model = snapshot?.models.find(candidate => candidate.modelId === modelId);
-    if (disposed || installing || removing || isActive() || !canInstall(model)) return;
-    installing = true;
-    previousInstallActionId = snapshot?.installation?.actionId ?? null;
+    if (disposed || installing.has(modelId) || removing || isActive(actionFor(modelId)) || !canInstall(model)) return;
+    installing.set(modelId, actionFor(modelId)?.actionId ?? null);
     operationError = '';
     render(snapshot);
     try {
-      // Main owns the native consent dialog and the entire installation action.
+      // Main owns the entire installation action; the click is the consent.
       await api.installNativeModel(modelId);
     } catch (error) {
-      if (!disposed) operationError = `安裝失敗：${String(error?.message || error)}`;
+      if (!disposed) operationError = `${model.name} 安裝失敗：${String(error?.message || error)}`;
     } finally {
       if (!disposed) await refresh();
-      installing = false;
+      installing.delete(modelId);
       if (!disposed) render(snapshot);
     }
   }

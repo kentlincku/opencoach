@@ -324,7 +324,9 @@ class RuntimeManager {
     const raw = artifact.transport === 'raw-files';
     if (raw) this._metadata(selected); // New raw IDs do not migrate an existing ZIP activation.
     const reservation = (raw ? expandedBytes : artifact.bytes + expandedBytes) + LEASE_LIMITS.scratchBytes;
-    const operation = this.coordinator.begin(layout.generationRoot, layout.metadata, reservation, () => this._metadata(selected));
+    // Model packs may download concurrently (distinct roots); runtime installs stay exclusive.
+    const operation = this.coordinator.begin(layout.generationRoot, layout.metadata, reservation, () => this._metadata(selected),
+      {shared: this.artifactKind === 'model'});
     const owner = {};
     const pin = this.coordinator.pin(layout.generationRoot, owner);
     const controller = new AbortController(); this.controller = controller;
@@ -385,7 +387,7 @@ class RuntimeManager {
       const value = Object.freeze({schemaVersion: raw ? 3 : 2, current, previous: old?.current ? Object.freeze(old.current) : null});
       let committed = false, open = true, warning;
       const commit = () => {
-        if (!open || committed || this.coordinator.active !== operation) throw new Error('METADATA_COMMIT_CLOSED');
+        if (!open || committed || !this.coordinator.owns(operation)) throw new Error('METADATA_COMMIT_CLOSED');
         throwIfAborted(controller.signal);
         checkRawRoots?.();
         const temporary = path.join(layout.generationRoot, 'metadata.tmp');

@@ -11,9 +11,10 @@ The public source snapshot contains the shared web application, Electron desktop
 | Artifact class | Status |
 |---|---|
 | Browser static build | Build from source |
-| macOS app (v0.3.0-beta.2) | Ad-hoc signed, not notarized arm64 DMG/ZIP built by `release.yml` from pinned public sources; voice runtime included, no model weights; first launch needs Open Anyway |
+| macOS app (v0.3.0-beta.3) | Ad-hoc signed, not notarized arm64 DMG/ZIP built by `release.yml` from pinned public sources; voice runtime included, no model weights; first launch needs Open Anyway |
 | macOS speech models | Downloaded in the App from pinned Hugging Face / GitHub revisions, verified by SHA-256 |
-| Windows installer / portable app | Latest is v0.2.0-beta.1; not rebuilt for v0.3.0 |
+| Windows installer (v0.3.0-beta.3) | Unsigned x64 NSIS Setup EXE built on the maintainer's Windows machine and uploaded by hand (not by `release.yml`); CPU voice runtime included, no model weights; SmartScreen warns on first run |
+| Windows speech models | Downloaded in the App from pinned revisions, verified by SHA-256 |
 | iOS app | Source only; users sign and install with their own Apple ID in Xcode |
 
 ## Engineering artifacts

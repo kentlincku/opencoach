@@ -33,7 +33,8 @@ const nativeModelStates = new Map();
 const hybridActiveModelIds = new Set();
 // Models this launch bound, recorded before the sidecar finishes starting.
 const hybridBoundModelIds = new Set();
-let lastModelInstallation = null;
+// Last finished action per model (renderer shows cancelled/failed/installed per row).
+const lastModelInstallations = new Map();
 let credentialStore;
 let providerBroker;
 let subscriptionAuth;
@@ -625,7 +626,7 @@ function nativeModelOverview() {
     : app.isPackaged ? 'managed' : 'unavailable';
   const choice = mode === 'runtime-only' ? sttChoiceState() : null;
   const keep = choice ? protectedModelIds(choice) : new Set();
-  const busy = Boolean(installationAction) || modelManager?.active?.size > 0;
+  const busy = Boolean(installationAction) || modelActions.size > 0 || modelManager?.active?.size > 0;
   const models = mode === 'runtime-only' && nativeModelCatalog ? nativeModelCatalog.models.flatMap(capability => {
     const model = modelManager.manifest?.models[capability.id];
     if (!model) return [];
@@ -659,7 +660,13 @@ function nativeModelOverview() {
       recommendedModelId: choice.recommendedId,
       recommendationReason: choice.recommendation.reason,
     }) : null,
-    installation: nativeModelInstallationView(installationAction || lastModelInstallation),
+    // Legacy single view (newest running action, else newest finished) plus one view per model.
+    installation: nativeModelInstallationView(installationAction || [...modelActions.values()].at(-1)
+      || [...lastModelInstallations.values()].at(-1) || null),
+    installations: Object.freeze((nativeModelCatalog?.models || []).flatMap(capability => {
+      const view = nativeModelInstallationView(modelActions.get(capability.id) || lastModelInstallations.get(capability.id));
+      return view ? [view] : [];
+    })),
     restartRequired: nativeRestartRequired || sttSelectionRestartRequired,
   });
 }
@@ -690,7 +697,7 @@ async function removeNativeModel(payload) {
     throw new Error('INVALID_MODEL_REQUEST');
   }
   if (!nativeModelCatalog || !nativeModelCatalog.models.some(model => model.id === payload.modelId)) throw new Error('UNKNOWN_MODEL');
-  if (installationAction) throw new Error('INSTALL_ALREADY_RUNNING');
+  if (installationAction || modelActions.size) throw new Error('INSTALL_ALREADY_RUNNING');
   const choice = sttChoiceState();
   let result;
   try {
@@ -708,7 +715,14 @@ async function removeNativeModel(payload) {
   return Object.freeze({ ...result, overview: nativeModelOverview() });
 }
 
+// Runtime installs are exclusive and consented; model installs run concurrently
+// (one per model id) and start on click without a native dialog: a model pack is
+// removable from settings, so the click itself is the consent.
 let installationAction = null;
+const modelActions = new Map();
+function isCurrentAction(action) {
+  return Boolean(action) && (installationAction === action || modelActions.get(action.id) === action);
+}
 let installationMenu = null;
 let installationStatus = '尚未安裝；語音可用性以健康檢查為準';
 
@@ -717,11 +731,13 @@ function refreshInstallationMenu() {
   for (const item of installationMenu.items) {
     if (item.id === 'asset-status') item.label = installationStatus;
     else if (item.id === 'asset-cancel') {
-      const original = installationAction;
-      item.enabled = Boolean(original && !original.cancelled && !shuttingDown);
-      item.click = () => cancelInstallation(original);
-    } else if (item.id?.startsWith('asset-')) {
-      item.enabled = item.installAvailable && !installationAction && !shuttingDown;
+      const originals = installationAction ? [installationAction] : [...modelActions.values()];
+      item.enabled = originals.some(original => !original.cancelled) && !shuttingDown;
+      item.click = () => ({cancelled: originals.map(original => cancelInstallation(original).cancelled).some(Boolean)});
+    } else if (item.id === 'asset-runtime') {
+      item.enabled = item.installAvailable && !installationAction && !modelActions.size && !shuttingDown;
+    } else if (item.id?.startsWith('asset-model-')) {
+      item.enabled = item.installAvailable && !installationAction && !modelActions.has(item.id.slice('asset-model-'.length)) && !shuttingDown;
     }
   }
 }
@@ -737,7 +753,7 @@ function setupInstallationMenu() {
   };
   const trust = app.isPackaged ? bundledVoiceTrust() : null;
   const embedded = trust?.schemaVersion === 1 || trust?.schemaVersion === 2;
-  if (embedded && !installationAction && !lastModelInstallation) {
+  if (embedded && !installationAction && !modelActions.size && !lastModelInstallations.size) {
     installationStatus = trust.schemaVersion === 1 ? '使用 App 內建語音資產；就緒狀態以健康檢查為準'
       : '模型可分包安裝；安裝與就緒狀態請查看設定';
   }
@@ -758,7 +774,7 @@ function setupInstallationMenu() {
 }
 
 function recordInstallationProgress(action, progress) {
-  if (installationAction !== action || !action.started || action.cancelled || !progress
+  if (!isCurrentAction(action) || !action.started || action.cancelled || !progress
       || !Number.isSafeInteger(progress.bytes) || progress.bytes < action.bytes || progress.bytes > action.total
       || progress.total !== action.total) return;
   action.bytes = progress.bytes;
@@ -774,15 +790,15 @@ function cancelNativeModelInstallAction(payload) {
     throw new Error('INVALID_MODEL_ACTION');
   }
   assertAdmission();
-  const action = installationAction;
-  return cancelInstallation(action?.kind === 'model' && action.actionId === id.value ? action : null);
+  const action = [...modelActions.values()].find(candidate => candidate.actionId === id.value);
+  return cancelInstallation(action || null);
 }
 
 function cancelInstallation(original) {
-  if (!original || installationAction !== original || original.cancelled) return {cancelled: false};
+  if (!original || !isCurrentAction(original) || original.cancelled) return {cancelled: false};
   original.cancelled = true;
   original.phase = 'cancelling';
-  original.dialogController.abort();
+  original.dialogController?.abort();
   installationStatus = '已取消；等待原始作業結束';
   if (original.started) {
     if (original.kind === 'runtime') original.manager.cancel();
@@ -795,7 +811,7 @@ function cancelInstallation(original) {
 function cancelInstallationRequest(kind, payload) {
   assertAdmission();
   const id = kind === 'model' ? installationModelId(payload) : null;
-  const original = installationAction;
+  const original = kind === 'model' ? modelActions.get(id) : installationAction;
   return cancelInstallation(original?.kind === kind && original.id === id ? original : null);
 }
 
@@ -822,12 +838,55 @@ function installationSelection(kind, id) {
     release: manifest.release, license: artifact.provenance.license.spdx};
 }
 
+async function runModelInstallation(id, selected) {
+  const action = {kind: 'model', id, actionId: randomUUID(), manager: selected.manager, started: false, cancelled: false,
+    phase: 'downloading', bytes: 0, total: selected.artifact.bytes, restartRequired: false, dialogController: null};
+  modelActions.set(id, action);
+  lastModelInstallations.delete(id);
+  installationStatus = `下載／驗證／安裝中：${modelActions.size} 個模型`;
+  refreshInstallationMenu();
+  try {
+    assertAdmission();
+    const result = await admitTask(() => {
+      if (action.cancelled) return {cancelled: true};
+      action.started = true;
+      return action.manager.install(id, progress => recordInstallationProgress(action, progress));
+    }, () => cancelInstallation(action));
+    action.phase = result.restartRequired ? 'installed' : 'cancelled';
+    action.restartRequired = Boolean(result.restartRequired);
+    if (result.restartRequired) {
+      action.bytes = action.total;
+      nativeRestartRequired = true;
+      ++nativeModelRefreshSerial;
+      nativeModelStates.set(id, Object.freeze({ state: 'installed', generation: result.generation || null }));
+    }
+    return result;
+  } catch (error) {
+    action.phase = action.cancelled ? 'cancelled' : 'failed';
+    const code = String(error?.message || '').split(':')[0];
+    action.errorCode = /^[A-Z][A-Z0-9_]{0,80}$/.test(code) ? code : 'INSTALLATION_FAILED';
+    // A user cancel is a normal outcome for model packs (partial files are cleaned up), not a failure.
+    if (action.cancelled) return {cancelled: true};
+    throw error;
+  } finally {
+    lastModelInstallations.set(id, Object.freeze({ kind: 'model', id, actionId: action.actionId,
+      phase: action.phase, bytes: action.bytes, total: action.total, cancelled: action.cancelled,
+      restartRequired: action.restartRequired, ...(action.errorCode ? { errorCode: action.errorCode } : {}) }));
+    if (modelActions.get(id) === action) modelActions.delete(id);
+    installationStatus = modelActions.size ? `下載／驗證／安裝中：${modelActions.size} 個模型`
+      : action.phase === 'installed' ? '安裝完成；必須完整結束並重新啟動應用程式'
+      : action.phase === 'failed' ? '安裝失敗；語音可用性以健康檢查為準' : '已取消';
+    refreshInstallationMenu();
+  }
+}
+
 async function requestInstallation(kind, payload) {
   assertAdmission();
   const id = kind === 'model' ? installationModelId(payload) : null;
   if (kind === 'runtime' && payload !== undefined) throw new Error('INVALID_RUNTIME_REQUEST');
-  if (installationAction) throw new Error('INSTALL_ALREADY_RUNNING');
+  if (installationAction || (kind === 'runtime' ? modelActions.size : modelActions.has(id))) throw new Error('INSTALL_ALREADY_RUNNING');
   const selected = installationSelection(kind, id);
+  if (kind === 'model') return runModelInstallation(id, selected);
   // Own the original intent before invoking any asynchronous native dialog.
   const action = {kind, id, actionId: randomUUID(), manager: selected.manager, started: false, cancelled: false,
     phase: 'confirming', bytes: 0, total: selected.artifact.bytes, restartRequired: false, dialogController: new AbortController()};
@@ -873,9 +932,6 @@ async function requestInstallation(kind, payload) {
     if (!action.cancelled) dialog.showErrorBox('原生語音安裝失敗', '安裝未完成。請確認有相容的已發布資產、足夠空間與網路；未自動啟用語音。');
     throw error;
   } finally {
-    if (kind === 'model') lastModelInstallation = Object.freeze({ kind, id, actionId: action.actionId,
-      phase: action.phase, bytes: action.bytes, total: action.total, cancelled: action.cancelled,
-      restartRequired: action.restartRequired, ...(action.errorCode ? { errorCode: action.errorCode } : {}) });
     if (installationAction === action) installationAction = null;
     refreshInstallationMenu();
   }
@@ -1700,6 +1756,7 @@ app.on('before-quit', event => {
   event.preventDefault();
   shuttingDown = true;
   cancelInstallation(installationAction); // synchronous revocation; pure consent is not a native drain
+  for (const action of [...modelActions.values()]) cancelInstallation(action);
   refreshInstallationMenu();
   if (shutdownPromise) return;
   let signals;

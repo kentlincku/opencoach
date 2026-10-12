@@ -1,41 +1,47 @@
 # Install on Windows 10/11 x64 (beta)
 
-A release may provide a per-user Setup EXE and a Portable EXE with `SHA256SUMS.txt`. Verify checksums first. The installer does not require administrator access and does not modify PATH. Portable mode still stores runtime/model assets in the Electron user-data directory, not beside the executable.
+OpenCoach v0.3.0-beta.3 for Windows is an unsigned engineering pre-release for 64-bit Windows 10/11 (x64 CPU with AVX2).
 
-Unsigned CI artifacts are engineering artifacts and can trigger SmartScreen; disabling Defender/SmartScreen is not a supported installation step. Public releases require a valid Authenticode signature verified with `Get-AuthenticodeSignature` on Windows. Runtime/model downloads may be unavailable while manifests are unpublished; the UI and system/browser fallbacks should still start.
+> This Windows installer was built and tested on the maintainer's Windows machine and uploaded by hand. It was **not** built by GitHub Actions; a reproducible CI build is planned. Verify the checksum before running it.
 
-Use Apps & Features or the generated uninstaller to remove Setup builds. Remove the user-data directory separately only if you also want to erase downloaded models, runtimes, and settings.
+## Download and verify
 
-## Development run from source
+1. From the GitHub release, download `OpenCoach-Setup-0.3.0-beta.3-x64.exe` and `SHA256SUMS.txt`.
+2. Verify the checksum in PowerShell and compare it with the line in `SHA256SUMS.txt`:
+   ```powershell
+   (Get-FileHash .\OpenCoach-Setup-0.3.0-beta.3-x64.exe -Algorithm SHA256).Hash.ToLower()
+   ```
+3. Run the installer. It installs for the current user only, needs no administrator access, and does not change PATH.
 
-Requirements: Node.js 22, Python 3.11, [`uv`](https://docs.astral.sh/uv/), PowerShell.
+The installer is not Authenticode-signed, so SmartScreen may say "Windows protected your PC". Choose **More info → Run anyway** only for a file whose checksum you verified. Do not turn off SmartScreen or Defender.
 
-```powershell
-git clone https://github.com/kentlincku/opencoach.git
-cd opencoach
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
-$env:VOICE_RUNTIME_PYTHON = "$PWD\.venv\Scripts\python.exe"
-npm start
-```
+## Speech models (downloaded in the App)
 
-`setup-windows.ps1` creates `.venv`, installs `native/python/requirements-windows.txt`, downloads the pinned Kokoro ONNX assets with SHA-256 verification, and runs `npm ci --include=dev`. Use `-VerifyAssetsOnly` to re-check the downloaded assets without reinstalling.
+The App contains the voice runtime (CPU) but **no speech model weights**. Open **Settings → speech models** and install:
 
-## Engineering build (Setup EXE and Portable EXE)
+- one speech-to-text model (faster-whisper tiny / base / small / large-v3-turbo), and
+- the Kokoro text-to-speech model.
 
-Run from a clean checkout at the repository root:
+Clicking a model's download button starts the download; several downloads can run at once. Size and license are shown on each model card. Every download is pinned to an exact upstream revision and verified by SHA-256 before use; installed models work offline. Changing the speech-to-text model takes effect after restarting the App.
+
+## Connect a local LLM
+
+Any OpenAI-compatible server works, for example LM Studio (`http://127.0.0.1:1234/v1`) or llama.cpp `llama-server` (`http://127.0.0.1:8080/v1`). In **Settings**, enter the endpoint, click **從端點取得模型**, pick a model and save. Local endpoints need no API key.
+
+## Uninstall
+
+Use **Settings → Apps → Installed apps** (or the uninstaller in the install folder). To also remove downloaded models and settings, delete `%APPDATA%\Voice Practice`.
+
+## Build it yourself
+
+On Windows with Node 22 and a Python 3.11 CPU virtual environment containing the pinned speech runtime packages:
 
 ```powershell
 npm ci
-npm run build:icons
-npm test
-$sha = (git rev-parse HEAD).Trim()
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-and-verify-windows-package.ps1 -ExpectedCodeSha $sha
+npm run build:web
+python -I -B scripts\win-build-local-runtime-cpu.py <resources-dir> <builds-dir>
+node scripts\win-pack-model-packs.cjs stage --runtime-build <builds-dir>\build-cpu-NNN --output <stage-dir>
+node scripts\win-pack-model-packs.cjs pack --stage <stage-dir> --stage-receipt-sha256 <sha from stage> --output <pack-dir> --nsis
 ```
 
-The driver refuses a dirty worktree or a SHA mismatch, runs `npm run pack:win`, writes `dist\SHA256SUMS.txt` and `dist\SOURCE_SHA.txt`, then smoke-tests the unpacked app, the Portable EXE, and an isolated NSIS install/uninstall. Outputs:
-
-- `dist\Voice-Practice-Setup-<version>-x64.exe`
-- `dist\Voice-Practice-Portable-<version>-x64.exe`
-- `dist\SHA256SUMS.txt`
-
-To build only (no verification): `npm run pack:win`. The optional native voice runtime is built separately with `scripts\build-windows-runtime.ps1`.
+`<resources-dir>` holds `acquisition.json`, the misaki lexicons, the Kokoro fp16 model (used only to read its vocabulary) and `silero_vad_v6.onnx`. The CPU build refuses any CUDA/cuDNN library. A one-command, pinned-source build like the macOS one is not available for Windows yet.
