@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 const { createRequire } = require('node:module');
 const mainPath = path.resolve(__dirname, '../apps/desktop/main.cjs');
 const realRequire = createRequire(mainPath);
-const gate = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const gate = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 const plain = value => JSON.parse(JSON.stringify(value));
 
 // Actual Main with Electron/dialog/manager boundaries doubled. No real child,
@@ -421,4 +421,16 @@ test('Main runs installs for different models at once without a consent dialog a
   const after = plain(h.api.overview().installations);
   assert.equal(after.find(view => view.modelId === h.id).phase, 'installed');
   assert.equal(after.find(view => view.modelId === 'second').phase, 'cancelled');
+});
+
+test('cancelling a running model download resolves as cancelled instead of surfacing AbortError', async () => {
+  const entered = gate(), h = harness({ entered });
+  const work = h.api.install(h.id);
+  const running = await entered.promise;
+  const actionId = h.api.overview().installations[0].actionId;
+  assert.deepEqual(plain(h.api.cancelAction({ actionId })), { cancelled: true });
+  const abort = new Error('The operation was aborted'); abort.name = 'AbortError';
+  running.completion.reject(abort);
+  assert.deepEqual(plain(await work), { cancelled: true });
+  assert.equal(h.api.overview().installations[0].phase, 'cancelled');
 });

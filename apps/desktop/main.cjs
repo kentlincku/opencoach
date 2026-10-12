@@ -865,7 +865,8 @@ async function runModelInstallation(id, selected) {
     action.phase = action.cancelled ? 'cancelled' : 'failed';
     const code = String(error?.message || '').split(':')[0];
     action.errorCode = /^[A-Z][A-Z0-9_]{0,80}$/.test(code) ? code : 'INSTALLATION_FAILED';
-    if (action.cancelled && !action.started) return {cancelled: true};
+    // A user cancel is a normal outcome for model packs (partial files are cleaned up), not a failure.
+    if (action.cancelled) return {cancelled: true};
     throw error;
   } finally {
     lastModelInstallations.set(id, Object.freeze({ kind: 'model', id, actionId: action.actionId,
