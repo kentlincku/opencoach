@@ -2,9 +2,13 @@ appId: com.kentlin.voicepractice
 productName: Voice Practice
 asar: true
 # Ship only the English and Traditional Chinese Electron/Chromium locales (220 otherwise, ~70 MB).
+# macOS filters <name>.lproj (en, zh_TW); Windows filters locales/<name>.pak (en-US, zh-TW).
+# Windows with no .pak left cannot load the renderer (ERR_FAILED -2), so list both spellings.
 electronLanguages:
   - en
   - zh_TW
+  - en-US
+  - zh-TW
 beforePack: scripts/build-foundation-models.cjs
 afterPack: scripts/verify-foundation-models-bundle.cjs
 afterSign: scripts/verify-foundation-models-bundle.cjs
