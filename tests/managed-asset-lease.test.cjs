@@ -138,3 +138,28 @@ test('cleanup never deletes a possibly published candidate even when an injected
   await manager.coordinator.retryCleanup();
   assert.equal(await fs.readFile(path.join(candidate, 'asset.bin'), 'utf8'), 'tiny');
 });
+test('two different model packs download concurrently; same model, runtime and removal stay exclusive', async t => {
+  const f = await fixture(t);
+  const second = {...f.modelManifest.models.tiny, name: 'tiny2'};
+  const manifest = {...f.modelManifest, models: {tiny: f.modelManifest.models.tiny, tiny2: second}};
+  const gates = [];
+  const fetchImpl = () => new Promise(resolve => gates.push(() => resolve(new Response(f.archive))));
+  const models = new ModelManager({userData: f.userData, manifest, platform: 'darwin', arch: 'arm64', fetchImpl});
+  const a = models.install('tiny');
+  const b = models.install('tiny2');
+  for (let i = 0; i < 50 && gates.length < 2; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(gates.length, 2, 'both downloads reached the network at the same time');
+  await assert.rejects(models.install('tiny'), /INSTALL_ALREADY_RUNNING/, 'one install per model');
+  await assert.rejects(new RuntimeManager({...f.options, fetchImpl}).install(), /INSTALL_ALREADY_RUNNING/, 'runtime install stays exclusive');
+  await assert.rejects(models.remove('tiny2'), /INSTALL_ALREADY_RUNNING/, 'removal waits for downloads');
+  for (const open of gates) open();
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.equal(ra.state, 'installed');
+  assert.equal(rb.state, 'installed');
+  assert.equal((await models.status('tiny')).state, 'installed');
+  assert.equal((await models.status('tiny2')).state, 'installed');
+  const snapshot = models.coordinator.snapshot();
+  assert.equal(snapshot.active, false);
+  assert.equal(snapshot.reservedBytes, 0);
+  assert.equal((await models.remove('tiny2')).removed, true, 'removal allowed once downloads finish');
+});

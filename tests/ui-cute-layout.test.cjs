@@ -198,7 +198,7 @@ test('native model panel renders one row per model with name, size, license, sta
   }
   // In-flight install shows progress bar and cancel inside the row being installed.
   assert.equal(all(rows[0]).filter(n => n.tagName === 'PROGRESS').length, 1);
-  assert.ok(all(rows[0]).some(n => n.tagName === 'BUTTON' && n.getAttribute('aria-label') === '取消本次安裝'));
+  assert.ok(all(rows[0]).some(n => n.tagName === 'BUTTON' && n.getAttribute('aria-label') === '取消安裝 English recognizer'));
   assert.equal(byClass(rows[1], 'native-model-state')[0].textContent, '已安裝／使用中');
   assert.equal(all(root).filter(n => n.tagName === 'A').length, 0, 'license URLs stay plain text');
   assert.ok(byClass(root, 'native-model-note').some(n => /兩包都就緒/.test(n.textContent)));

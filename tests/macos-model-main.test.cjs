@@ -398,3 +398,27 @@ test('a removal that fails part-way re-reads model state instead of keeping a st
   assert.ok(reads > 0);
   assert.equal(h.api.overview().models.find(m => m.modelId === 'w-tiny').state, 'missing');
 });
+
+test('Main runs installs for different models at once without a consent dialog and tracks each action', async () => {
+  const h = harness();
+  h.models.manifest.models['second'] = h.models.manifest.models[h.id];
+  h.api.setCatalog({ ...h.capabilities, models: [...h.capabilities.models, { ...h.capabilities.models[0], id: 'second' }] });
+  const first = h.api.install(h.id);
+  const second = h.api.install('second');
+  for (let i = 0; i < 20 && h.installs.length < 2; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.installs.length, 2, 'both installs started');
+  assert.equal(h.dialogs.length, 0, 'model packs start on click, no native dialog');
+  await assert.rejects(h.api.install(h.id), /INSTALL_ALREADY_RUNNING/, 'same model cannot start twice');
+  const views = plain(h.api.overview().installations);
+  assert.deepEqual(views.map(view => view.modelId).sort(), [h.id, 'second'].sort());
+  assert.notEqual(views[0].actionId, views[1].actionId);
+  const secondView = views.find(view => view.modelId === 'second');
+  assert.deepEqual(plain(h.api.cancelAction({ actionId: secondView.actionId })), { cancelled: true });
+  assert.deepEqual(h.cancellations, ['second']);
+  h.installs[1].completion.resolve({ cancelled: true });
+  h.installs[0].completion.resolve({ state: 'installed', generation: 'g1', restartRequired: true });
+  await Promise.all([first, second]);
+  const after = plain(h.api.overview().installations);
+  assert.equal(after.find(view => view.modelId === h.id).phase, 'installed');
+  assert.equal(after.find(view => view.modelId === 'second').phase, 'cancelled');
+});
