@@ -68,7 +68,7 @@ nsis:
   perMachine: false
   allowElevation: false
   createStartMenuShortcut: true
-  artifactName: Voice-Practice-Setup-${version}-${arch}.${ext}
+  artifactName: OpenCoach-Setup-${version}-${arch}.${ext}
 portable:
-  artifactName: Voice-Practice-Portable-${version}-${arch}.${ext}
-artifactName: Voice-Practice-${version}-${arch}.${ext}
+  artifactName: OpenCoach-Portable-${version}-${arch}.${ext}
+artifactName: OpenCoach-${version}-${arch}.${ext}
