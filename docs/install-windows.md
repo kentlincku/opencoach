@@ -34,7 +34,7 @@ Use **Settings → Apps → Installed apps** (or the uninstaller in the install 
 
 ## Build it yourself
 
-On Windows with Node 22 and a Python 3.11 CPU virtual environment containing the pinned speech runtime packages:
+On Windows with Node 22.12.0 or newer and a Python 3.11 CPU virtual environment containing the pinned speech runtime packages:
 
 ```powershell
 npm ci

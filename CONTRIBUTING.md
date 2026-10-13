@@ -6,7 +6,7 @@ Thank you for contributing.
 
 Requirements:
 
-- Node.js 22 and npm
+- Node.js 22.12.0 or newer and npm
 - Python 3.11+
 - `uv` for native Python runtime work
 - platform SDKs only when changing iOS code
