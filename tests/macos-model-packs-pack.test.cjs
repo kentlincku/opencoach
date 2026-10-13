@@ -385,8 +385,9 @@ test('native pack orchestration is exercised only with labelled build/signing do
   assert.equal(typeof tooling().pack,'function','executable pack orchestration is required');
   const {createRequire} = require('node:module'), vm = require('node:vm');
   const actualRequire = createRequire(SCRIPT), actualBuilder = actualRequire('electron-builder');
-  for (const scenario of [null,'builder','trust','runtime-zip']) {
-    const failureMode = ['builder','trust'].includes(scenario) ? scenario : null;
+  for (const scenario of [null,'builder','trust','runtime-zip','asar-createPackage','asar-createPackageFromStreams']) {
+    const asarApi = scenario?.startsWith('asar-') ? scenario.slice(5) : null;
+    const failureMode = asarApi ? 'asar-write' : ['builder','trust'].includes(scenario) ? scenario : null;
     const runtimeZip = scenario === 'runtime-zip', failBuilder = failureMode === 'builder';
     const {dir,git} = fixtureRepo(t);
     const extra = ['electron-builder.yml','package.json','package-lock.json','scripts/macos-pack-model-packs.cjs',
@@ -417,7 +418,7 @@ test('native pack orchestration is exercised only with labelled build/signing do
     const outside = temporary(t), sentinel = path.join(outside,'sentinel');
     fs.writeFileSync(sentinel,'EXTERNAL_SENTINEL_UNCHANGED',{mode:0o600});
     const sentinelBefore = fileState(sentinel);
-    let concurrentBefore, backupBefore;
+    let concurrentBefore, backupBefore, asarReadbackError;
     const localRequire = createRequire(path.join(dir,'scripts/macos-pack-model-packs.cjs'));
     const context = {module:{exports:{}},Buffer,__dirname:path.join(dir,'scripts'),__filename:path.join(dir,'scripts/macos-pack-model-packs.cjs'),
       process:{...process,platform:'darwin',arch:'arm64',env:{TMPDIR:process.env.TMPDIR,PATH:process.env.PATH}},console};
@@ -443,7 +444,63 @@ test('native pack orchestration is exercised only with labelled build/signing do
       fs.cpSync(path.join(output,'foundation-models'),path.join(resources,'foundation-models'),{recursive:true});
       const asarInput = path.join(temporary(t),'asar-input');
       for (const part of ['apps/desktop','apps/web']) fs.cpSync(path.join(dir,part),path.join(asarInput,part),{recursive:true});
-      await actualRequire('@electron/asar').createPackage(asarInput,path.join(resources,'app.asar'));
+      const archive = path.join(resources,'app.asar');
+      if (asarApi) {
+        // Reuse this fully admitted orchestration fixture; no synthetic receipt
+        // or replacement verifier. Only the final real output write is faulted.
+        const admitted = tooling().verifyStage(staged.dir,anchor,fixtureSource);
+        const filename = 'apps/web/index.html';
+        assert.ok(fixtureSource.files.some(file => file.path === filename),
+          'the error target must be a required source read, not an extra archive entry');
+        const probe = mode => {
+          const child = spawnSync(process.execPath,[path.join(__dirname,'fixtures/asar-write-completion-child.cjs'),
+            asarApi,mode,JSON.stringify({source:asarInput,destination:archive,filename})],
+          {cwd:ROOT,encoding:'utf8',timeout:15000,maxBuffer:1024*1024});
+          assert.ifError(child.error);
+          assert.equal(child.status,0,child.stderr);
+          // Node 22.12 may emit its require(ESM) warning; do not hide it.
+          if (child.stderr) process.stderr.write(child.stderr);
+          const result = JSON.parse(child.stdout);
+          assert.equal(result.sharedInstance,true);
+          assert.equal(result.cjsRequireSucceeded,true);
+          assert.equal(result.gateHits,1);
+          assert.equal(result.filename,filename);
+          return result;
+        };
+        const control = probe('finish');
+        assert.equal(control.afterClose.writableFinished,true);
+        assert.equal(control.afterClose.archiveSize,control.afterClose.expectedSize);
+        assert.equal(control.afterClose.extractedMatches,true);
+        const valid = tooling().verifyPackagedPayload(path.dirname(path.dirname(resources)),admitted);
+        assert.equal(valid.compiledTrustSha256,sha(admitted.trustBytes));
+        assert.equal(valid.appAcceptance,'NOT_RUN');
+        const failed = probe('error');
+        assert.equal(failed.emittedErrorCode,'ASAR_TEST_WRITE_FAILURE');
+        assert.equal(failed.whileGated.writableFinished,false);
+        assert.equal(failed.afterClose.writableFinished,false);
+        assert.equal(failed.afterClose.archiveSize,
+          failed.afterClose.expectedSize - fs.statSync(path.join(asarInput,filename)).size);
+        assert.equal(failed.afterClose.rawMatches,false);
+        assert.equal(failed.afterClose.extractedMatches,false);
+        const asar = actualRequire('@electron/asar');
+        asar.uncache(archive);
+        // Every required preceding entry remains intact, including compiled trust.
+        for (const file of fixtureSource.files.filter(file =>
+          file.path.startsWith('apps/desktop/') || file.path.startsWith('apps/web/'))) {
+          if (file.path !== filename) assert.deepEqual(asar.extractFile(archive,file.path),
+            fs.readFileSync(path.join(asarInput,file.path)));
+        }
+        asarReadbackError = new RegExp('^File entry extends beyond archive boundary \\(offset='
+          + failed.afterClose.archiveSize + ', size=' + fs.statSync(path.join(asarInput,filename)).size
+          + ', archiveSize=' + failed.afterClose.archiveSize + '\\)$');
+        assert.throws(() => tooling().verifyPackagedPayload(path.dirname(path.dirname(resources)),admitted),
+          {message:asarReadbackError});
+        t.diagnostic(`${asarApi}: valid control accepted; injected ${failed.emittedErrorCode}; `
+          + `promise=${failed.state} (observational only); archive=${failed.afterClose.archiveSize}/`
+          + `${failed.afterClose.expectedSize}; required ${filename} readback rejected`);
+        // Deliberately continue even if the dependency rejected: the real afterPack
+        // readback must fail closed and prevent the product's PASS receipt itself.
+      } else await actualRequire('@electron/asar').createPackage(asarInput,archive);
       await config.afterPack(ctx); await config.afterSign(ctx);
       if (runtimeZip) fs.writeFileSync(path.join(output,'artifacts/NON_NATIVE_FIXTURE.dmg'),'NON_NATIVE_DMG_FIXTURE');
       return [];
@@ -472,13 +529,19 @@ test('native pack orchestration is exercised only with labelled build/signing do
     const trustFile=path.join(dir,'apps/desktop/bundled-voice-trust.cjs'), original=fs.readFileSync(trustFile);
     const work=context.module.exports.pack({stage:staged.dir,stageReceiptSha256:anchor,output,dmg:runtimeZip});
     if (failureMode) {
-      const expected = failureMode === 'trust' ? /MODEL_PACK_TRUST_OWNERSHIP_CONFLICT/ : /NON_NATIVE_BUILDER_FAILURE/;
-      await assert.rejects(work,expected);
+      const expected = failureMode === 'asar-write' ? /^File entry extends beyond archive boundary \(offset=\d+, size=\d+, archiveSize=\d+\)$/
+        : failureMode === 'trust' ? /MODEL_PACK_TRUST_OWNERSHIP_CONFLICT/ : /NON_NATIVE_BUILDER_FAILURE/;
+      await assert.rejects(work,{message:expected});
+      if (asarApi) assert.ok(asarReadbackError, 'direct product readback rejection must precede afterPack rejection');
       assert.equal(fs.existsSync(path.join(output,'receipt.json')),false);
       const failure = JSON.parse(fs.readFileSync(path.join(output,'failure.json')));
       assert.equal(failure.status,'FAILED');
       assert.equal(failure.appAcceptance,'NOT_RUN');
-      assert.match(failure.error,expected);
+      if (asarApi) {
+        assert.match(failure.error.split('\n')[0].replace(/^Error: /,''),asarReadbackError);
+        assert.match(failure.error,/at verifyPackagedPayload /);
+        t.diagnostic(`${asarApi}: real pack rejected; receipt.json absent; failure.json status=FAILED`);
+      } else assert.match(failure.error,expected);
     } else {
       const result=await work, receipt=JSON.parse(fs.readFileSync(path.join(output,'receipt.json')));
       assert.equal(result.receiptSha256,sha(fs.readFileSync(path.join(output,'receipt.json'))));
@@ -663,7 +726,9 @@ test('pack CLI preserves failure after real dependency cleanup, owned trust rest
       assert.equal(message.type,'MACOS_MODEL_PACKS_PACKAGE'); assert.equal(message.appAcceptance,'NOT_RUN');
       assert.equal(message.receiptSha256,sha(fs.readFileSync(message.receiptPath)));
       assert.equal(JSON.parse(fs.readFileSync(message.receiptPath)).status,'PASS');
-      assert.equal(result.stderr,''); assert.equal(result.status,0);
+      // Node 22.12 warns for supported require(ESM); all other stderr still fails.
+      const stderr = result.stderr.replace(/^\(node:\d+\) ExperimentalWarning: CommonJS module [^\r\n]+ is loading ES Module [^\r\n]+ using require\(\)\.\r?\nSupport for loading ES Module in require\(\) is an experimental feature and might change at any time\r?\n\(Use `[^`]+ --trace-warnings \.\.\.` to show where the warning was created\)\r?\n/gm,'');
+      assert.equal(stderr,''); assert.equal(result.status,0);
     }
   }
 });

@@ -40,7 +40,7 @@ Clicking a model's download button starts the download; several downloads can ru
 
 ## Build it yourself
 
-The release workflow builds the App from pinned public sources only. You can run the same pipeline locally (about 20–30 minutes; needs Xcode command-line tools, Node 22, Python 3.11 and `uv`):
+The release workflow builds the App from pinned public sources only. You can run the same pipeline locally (about 20–30 minutes; needs Xcode command-line tools, Node 22.12.0 or newer, Python 3.11 and `uv`):
 
 ```bash
 npm ci

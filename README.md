@@ -74,6 +74,8 @@ Report vulnerabilities through [GitHub private vulnerability reporting](SECURITY
 
 ## Development
 
+Use Node.js 22.12.0 or newer for development and packaging (ASAR CommonJS/ESM interoperability).
+
 Requirements: Node.js 26, npm, Python 3.11+. Building the macOS speech runtime also needs `uv` and the Xcode command-line tools.
 
 ```bash
